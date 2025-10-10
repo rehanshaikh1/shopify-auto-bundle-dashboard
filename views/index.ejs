@@ -3,19 +3,17 @@
 <head>
   <title>Product Bundle Dashboard</title>
   
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/choices.js/1.1.6/styles/css/choices.css" xintegrity="sha512-0bYNWBaGnMqLCuum81OA7oZo7/pIEjWb/ad3vdKuKlgTZXalLMDkRT3P4Z262/aQBnNuznUg3WpTb5Vgu11abw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  
   <style>
     :root {
       --p-color-bg-default: #ffffff;
-      --p-color-text-default: #212b36; /* Darker text */
+      --p-color-text-default: #212b36;
       --p-color-icon-default: #5c5c5c;
       --p-color-border-default: #c4c4c4;
-      --p-color-interactive-default: #0070c0; /* Polaris Blue */
+      --p-color-interactive-default: #0070c0;
       --p-color-interactive-hover: #005691;
       --p-color-surface-subdued: #f4f6f8;
       --p-color-surface-header: #f9fafb;
-      --p-color-surface-active: #eef4f9; /* Light blue on hover/focus */
+      --p-color-surface-active: #eef4f9;
       --p-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
     }
     body { 
@@ -56,10 +54,10 @@
       margin-bottom: 15px;
       color: var(--p-color-text-default);
     }
-    h5 { /* Added style for h5 */
+    h5 { 
         font-size: 14px;
         font-weight: 500;
-        margin-top: -10px; /* Adjust spacing below h3 */
+        margin-top: -10px; 
         margin-bottom: 15px;
         color: var(--p-color-text-default);
     }
@@ -84,7 +82,7 @@
         flex-grow: 1;
     }
     /* Standard input styles */
-    .bundle-form input[type="number"] {
+    .bundle-form input[type="number"], .bundle-form input[type="text"] {
       padding: 8px 12px;
       border: 1px solid var(--p-color-border-default);
       border-radius: 4px;
@@ -93,30 +91,61 @@
       transition: border-color 0.2s, box-shadow 0.2s;
     }
     
-    .bundle-form input[type="number"]:focus {
+    .bundle-form input[type="number"]:focus, .bundle-form input[type="text"]:focus {
         border-color: var(--p-color-interactive-default);
         box-shadow: 0 0 0 1px var(--p-color-interactive-default);
         outline: none;
     }
     
-    /* 💡 Choices.js Custom Styling for always-open, scrollable list */
-    .choices {
-        margin-bottom: 15px; /* Adjust spacing below the component */
-    }
-    .choices__inner {
-        background-color: var(--p-color-bg-default);
+    /* --- CUSTOM FILTER UI (Market/Collection Tags) --- */
+    .custom-multi-select {
+        /* Combined border for the whole component */
         border: 1px solid var(--p-color-border-default);
         border-radius: 4px;
-        min-height: auto;
+        background-color: var(--p-color-bg-default);
+        overflow: hidden;
+    }
+
+    .filter-input-container {
+        display: flex;
+        align-items: center;
+    }
+    .filter-input-container:focus-within {
+        border-color: var(--p-color-interactive-default);
+        box-shadow: 0 0 0 1px var(--p-color-interactive-default);
+    }
+    /* UNIFIED STYLE FOR SEARCH INPUTS */
+    #tag_search_input {
+        flex-grow: 1;
+        border: none;
+        padding: 8px 12px; /* Unified padding with product list search */
+        margin: 0;
+        height: auto;
+        font-size: 14px;
+        /* FIX: Add border-bottom here for consistency */
+        border-bottom: 1px solid var(--p-color-border-default);
+    }
+    
+    /* --- Chip Containers --- */
+    #selected_tags_display, #selected_products_display, #selected_products_display_update {
+        padding: 7px 7px 0 7px;
+        min-height: 10px;
+        background-color: var(--p-color-surface-active); /* Light gray background */
+        border-bottom: 1px solid var(--p-color-border-default);
+        display: flex;
+        flex-wrap: wrap;
+    }
+    /* Hide the border if the container is empty */
+    #selected_tags_display:empty, #selected_products_display:empty, #selected_products_display_update:empty {
+        border-bottom: none;
+        min-height: 0;
         padding: 0;
     }
-    .choices__list--multiple {
-        /* Styles for selected items in the input area */
-        padding: 5px 7px 0 7px;
-    }
-    /* 💡 Custom Color for Selected Item Tags */
-    .choices__list--multiple .choices__item {
-        display: inline-block;
+
+    /* --- Chip Base Style --- */
+    .selected-tag, .product-chip {
+        display: inline-flex;
+        align-items: center;
         vertical-align: middle;
         border-radius: 20px;
         padding: 4px 10px;
@@ -124,74 +153,110 @@
         font-weight: 500;
         margin-right: 3.75px;
         margin-bottom: 3.75px;
-        background-color: var(--p-color-interactive-default); /* Use Polaris Blue */
-        border: 1px solid var(--p-color-interactive-default); /* Use Polaris Blue */
-        color: #FFFFFF; /* White text for contrast */
-        word-break: break-all;
+        /* Unified style for white chip, blue border/text */
+        background-color: var(--p-color-bg-default);
+        border: 1px solid var(--p-color-interactive-default);
+        color: var(--p-color-interactive-default);
+        max-width: 90%;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
     }
     
-    /* Ensure the button within the selected item is styled for visibility */
-    .choices__list--multiple .choices__item .choices__button {
-        color: #FFFFFF;
-        border-left-color: rgba(255, 255, 255, 0.5);
-    }
-    .choices__list--multiple .choices__item .choices__button:hover,
-    .choices__list--multiple .choices__item .choices__button:focus {
-        color: #FFFFFF;
+    /* Remove button style */
+    .selected-tag-remove, .product-chip-remove {
+        cursor: pointer;
+        font-weight: bold;
+        margin-left: 5px;
         opacity: 0.8;
+        line-height: 1;
+        color: var(--p-color-interactive-default); 
+    }
+    .selected-tag-remove:hover, .product-chip-remove:hover {
+        opacity: 1;
     }
 
-    .choices__input {
-        background-color: var(--p-color-bg-default);
-        /* Important: Adjust input padding to match theme spacing */
-        padding: 8px 12px; 
-        margin: 0;
-        font-size: 14px;
-    }
-    .choices__input:focus {
-        box-shadow: none; /* Let the container handle focus state */
-    }
-    /* FIX: Ensure the inner wrapper always looks focused/open */
-    .choices.is-focused .choices__inner,
-    .choices:not(.is-focused) .choices__inner { 
-        border-color: var(--p-color-border-default); /* Use default border when blurred */
-        box-shadow: none;
-    }
-    .choices.is-focused .choices__inner {
-        border-color: var(--p-color-interactive-default); /* Reapply focus style when actually focused */
-        box-shadow: 0 0 0 1px var(--p-color-interactive-default);
-    }
-    
-    /* 💡 UPDATED: Style for standard dropdown/list */
-    .choices__list--dropdown {
-        /* Remove the 'always-open' forcing styles (position: relative, visibility/opacity overrides) */
-        
-        /* 💡 NEW: Max Height for Dropdown List */
-        max-height: 120px !important; /* Forces a controlled scrollable height */
-        overflow-y: auto;
-        
-        /* Keep original styling for appearance */
-        background-color: var(--p-color-bg-default);
-        border: 1px solid var(--p-color-border-default);
-        border-radius: 4px;
+
+    .filter-options-list {
+        list-style: none;
         padding: 0;
-        z-index: 10; /* Ensure it floats above other elements */
+        margin: 0;
+        max-height: 120px; 
+        overflow-y: auto;
     }
-    /* FIX: Correct positioning when open (standard Choices.js behavior) */
-    .choices.is-open .choices__list--dropdown {
-        border-top-color: var(--p-color-border-default);
-        margin-top: -1px;
-        border-radius: 0 0 4px 4px;
-    }
-    
-    .choices__list--dropdown .choices__item--choice {
+    .filter-options-list li {
         padding: 10px 12px;
         font-size: 14px;
+        cursor: pointer;
+        border-bottom: 1px solid var(--p-color-surface-subdued);
+        transition: background-color 0.1s;
     }
-    .choices__list--dropdown .choices__item--choice.is-highlighted {
+    .filter-options-list li:last-child {
+        border-bottom: none;
+    }
+    .filter-options-list li:hover {
         background-color: var(--p-color-surface-active);
+    }
+    .filter-options-list li.selected {
+        background-color: var(--p-color-interactive-default);
+        color: white;
+    }
+    .filter-options-list li.selected:hover {
+        background-color: var(--p-color-interactive-hover);
+    }
+    .filter-options-list li.hidden {
+        display: none;
+    }
+
+    /* --- Custom Product Select List Styles --- */
+    .custom-product-select-wrapper {
+        border: 1px solid var(--p-color-border-default);
+        border-radius: 4px;
+        background-color: var(--p-color-bg-default);
+        overflow: hidden;
+    }
+    #product_list_search_input, #update_list_search_input {
+        width: 100%;
+        padding: 8px 12px;
+        border: none;
+        box-sizing: border-box;
+        font-size: 14px;
+        border-bottom: 1px solid var(--p-color-border-default);
+    }
+    #product_list_options, #update_list_options {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        max-height: 350px; /* Always open scrollable list height */
+        overflow-y: auto;
+    }
+    .product-option-item {
+        padding: 10px 12px;
+        font-size: 14px;
+        cursor: pointer;
+        border-bottom: 1px solid var(--p-color-surface-subdued);
+        transition: background-color 0.1s;
+        word-break: break-word; 
+    }
+    .product-option-item:last-child {
+        border-bottom: none;
+    }
+    .product-option-item:hover {
+        background-color: var(--p-color-surface-active);
+    }
+    .product-option-item.hidden {
+        display: none;
+    }
+
+
+    #result-summary {
+        margin-top: 0;
+        margin-bottom: 5px;
+        font-size: 14px;
+        font-weight: 500;
         color: var(--p-color-text-default);
     }
+    /* ---------------------------------------------------- */
 
     .primary-button {
       padding: 10px 20px;
@@ -292,7 +357,7 @@
       color: var(--p-color-interactive-hover);
     }
     
-    /* New styles for flash messages */
+    /* Styles for flash messages */
     .flash-message {
       padding: 15px;
       margin-bottom: 20px;
@@ -300,21 +365,21 @@
       font-weight: 500;
       word-break: break-word;
       white-space: pre-wrap;
-      position: relative; /* 💡 Added for button positioning */
-      transition: opacity 0.5s ease-out; /* 💡 Added for fade out */
+      position: relative; 
+      transition: opacity 0.5s ease-out; 
     }
     .flash-message.success {
-      background-color: #d4edda; /* Light green */
+      background-color: #d4edda; 
       border: 1px solid #c3e6cb;
-      color: #155724; /* Dark green text */
+      color: #155724; 
     }
     .flash-message.error {
-      background-color: #f8d7da; /* Light red */
+      background-color: #f8d7da; 
       border: 1px solid #f5c6cb;
-      color: #721c24; /* Dark red text */
+      color: #721c24; 
     }
 
-    /* 💡 Close Button Styles */
+    /* Close Button Styles */
     .close-button {
       position: absolute;
       top: 50%;
@@ -335,22 +400,22 @@
     }
 
     .flash-message.success .close-button {
-        color: #155724; /* Dark green text */
+        color: #155724; 
     }
     .flash-message.error .close-button {
-        color: #721c24; /* Dark red text */
+        color: #721c24; 
     }
 
-    /* 💡 NEW: Loading Overlay Styles */
+    /* Loading Overlay Styles */
     .loading-overlay {
-      display: none; /* Hidden by default */
+      display: none; 
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
-      z-index: 1000; /* Ensure it appears above other elements */
+      background-color: rgba(0, 0, 0, 0.5); 
+      z-index: 1000; 
       justify-content: center;
       align-items: center;
       flex-direction: column;
@@ -386,9 +451,7 @@
     <span class="loading-text">Processing...</span>
   </div>
   <% if (message) { 
-      // Decode the URI component
       const decodedMessage = decodeURIComponent(message);
-      // Determine if it's an error or success message
       const isError = decodedMessage.toLowerCase().includes('error') || decodedMessage.toLowerCase().includes('❌');
       const messageClass = isError ? 'error' : 'success';
   %>
@@ -410,70 +473,88 @@
     </div>
   
     <% 
-      // FIX: Calculate productsWithoutBundles before the h3 tag
       const bundledProductIds = bundledProducts.map(p => p.id.toString());
       const productsWithoutBundles = products.filter(p => !bundledProductIds.includes(p.id.toString()));
-
-      // 💡 NEW: Extract all unique tags for filter options
-      const allUniqueTags = [...new Set(products.flatMap(p => p.tags))].filter(Boolean).sort();
     %>
     <div id="create-bundles" class="tab-content active">
       <h3 id="create-bundle-header">Select Products and Set Initial Discounts (<%= productsWithoutBundles.length %> Products)</h3>
-      <p>Non-bundled products with sufficient inventory quantity are listed below.</p>
       
       <div class="product-filter card" style="padding: 15px; margin-bottom: 20px;">
           <div class="card-header" style="border-bottom: none; padding-bottom: 0; margin-bottom: 10px;">
               <h3 style="margin-bottom: 0;">Product Filters</h3>
-              <h5 style="margin-top: 5px; margin-bottom: 5px; font-weight: 400; color: var(--p-color-text-default);">Use these filters to narrow down the product list below.</h5>
           </div>
           <div class="form-group" style="margin-bottom: 0;">
-              <div class="input-field">
-                  <label for="filter_by_tag">Filter by Tag (Any Tag):</label>
-                  <select id="filter_by_tag" multiple>
-                      <% allUniqueTags.forEach(tag => { %>
-                          <option value="<%= tag %>"><%= tag %></option>
-                      <% }) %>
-                  </select>
-              </div>
+              
+              <div class="input-field" style="max-width: 100%; flex-basis: 100%;">
+              <h5 style="margin-top: 5px; margin-bottom: 10px; font-weight: 400; color: var(--p-color-text-default);">Filter by selecting a specific Market Collection tag.</h5>
+                  
+                  <% if (marketCollections.length === 0) { %>
+                    <p class="no-bundles" style="margin: 0; padding: 8px 12px; border: 1px solid var(--p-color-border-default); border-radius: 4px;">No tags found on products for filtering.</p>
+                  <% } else { %>
+                    <div class="custom-multi-select">
+                        
+                        <div class="selected-tags-container" id="selected_tags_display">
+                            </div>
 
-              <div class="input-field">
-                  <label for="filter_by_collection">Filter by Market/Collection (Primary Tags):</label>
-                  <select id="filter_by_collection" multiple>
-                      <% 
-                        // Use a fixed list of your market tags for simplicity, assuming they map 1:1 with primary tags
-                        // Note: Value is set to lowercase tag as per filtering logic (e.g., "de")
-                        const marketTags = ['DE', 'SE', 'FR', 'IT', 'FI', 'ES', 'NL', 'NO'];
-                        marketTags.forEach(tag => { 
-                      %>
-                          <option value="<%= tag.toLowerCase() %>"><%= tag %></option>
-                      <% }); %>
-                  </select>
+                        <div class="filter-input-container">
+                            <input type="text" id="tag_search_input" placeholder="Search available tags..." autocomplete="off">
+                        </div>
+
+                        <ul class="filter-options-list" id="filter_options_list">
+                            <% marketCollections.forEach(tagObj => { %>
+                                <li data-value="<%= tagObj.tag %>"><%= tagObj.title %></li>
+                            <% }); %>
+                        </ul>
+                    </div>
+                    <select id="filter_by_collection" name="filter_by_collection" multiple style="display:none;"></select>
+                  <% } %>
               </div>
           </div>
       </div>
+      
       <form class="bundle-form" action="/create-bundles" method="POST">
+        
+        <p id="result-summary">Showing <%= productsWithoutBundles.length %> results for all products.</p>
+
         <label for="create_product_ids">Select Products (without bundles):</label>
         
         <% if (productsWithoutBundles.length === 0) { %>
           <p class="no-bundles">No products available without bundles.</p>
         <% } else { %>
-          <select name="product_ids" id="create_product_ids" multiple>
-            <% productsWithoutBundles.forEach(product => { %>
-              <option value="<%= product.id %>" data-tags="<%= product.tags ? product.tags.join(',') : '' %>"><%= product.title %> (ID: <%= product.id %>)</option>
-            <% }) %>
-          </select>
-          
-          <div class="form-group">
-            <div class="input-field">
-                <label>Discount for 2x (%):</label>
-                <input type="number" name="discount2" step="0.01" min="0" max="100">
-            </div>
-            <div class="input-field">
-                <label>Discount for 3x (%):</label>
-                <input type="number" name="discount3" step="0.01" min="0" max="100">
-            </div>
+          <div class="custom-product-select-wrapper">
+              
+              <div id="selected_products_display">
+                  </div>
+
+              <input type="text" id="product_list_search_input" placeholder="Search products..." autocomplete="off">
+              <ul id="product_list_options">
+                  <% productsWithoutBundles.forEach(product => { %>
+                      <li class="product-option-item" 
+                          data-id="<%= product.id %>" 
+                          data-tags="<%= product.tags ? product.tags.join(',') : '' %>"
+                          data-title="<%= product.title %>">
+                          <%= product.title %> (ID: <%= product.id %>) [Collection Tags: <%= product.tags ? product.tags.join(', ') : '' %>]
+                      </li>
+                  <% }) %>
+              </ul>
           </div>
-          
+          <select name="product_ids" id="create_product_ids" multiple style="display:none;"></select>
+        <div class="form-group" style="margin-top: 10px;">
+  <div class="input-field">
+   <label>Bundle Text (Information) (Optional):</label>
+<input type="text" name="bundle_text" placeholder="Bundle Details (Any Language)">
+
+  </div>
+  <div class="input-field">
+    <label>Discount for 2x (%):</label>
+    <input type="number" name="discount2" step="0.01" min="0" max="100">
+  </div>
+  <div class="input-field">
+    <label>Discount for 3x (%):</label>
+    <input type="number" name="discount3" step="0.01" min="0" max="100">
+  </div>
+</div>
+
           <div class="checkbox-wrapper">
             <label>
               <input type="checkbox" name="add_image" value="true" checked> Add main product image to bundle variants
@@ -491,11 +572,23 @@
         <% if (bundledProducts.length === 0) { %>
           <p class="no-bundles">No products with bundles to update.</p>
         <% } else { %>
-          <select name="product_ids" id="update_product_ids" multiple>
-            <% bundledProducts.forEach(product => { %>
-              <option value="<%= product.id %>"><%= product.title %> (ID: <%= product.id %>)</option>
-            <% }) %>
-          </select>
+            <div class="custom-product-select-wrapper">
+                
+                <div id="selected_products_display_update">
+                    </div>
+
+                <input type="text" id="update_list_search_input" placeholder="Search products..." autocomplete="off">
+                <ul id="update_list_options">
+                    <% bundledProducts.forEach(product => { %>
+                        <li class="product-option-item" 
+                            data-id="<%= product.id %>" 
+                            data-title="<%= product.title %>">
+                            <%= product.title %> (ID: <%= product.id %>)
+                        </li>
+                    <% }) %>
+                </ul>
+            </div>
+            <select name="product_ids" id="update_product_ids_hidden" multiple style="display:none;"></select>
           
           <div class="form-group">
             <div class="input-field">
@@ -541,19 +634,28 @@
       </table>
     <% } %>
   </div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/choices.js/1.1.6/choices.min.js" xintegrity="sha512-7PQ3MLNFhvDn/IQy12+1+jKcc1A/Yx4KuL62Bn6+ztkiitRVW1T/7ikAh675pOs3I+8hyXuRknDpTteeptw4Bw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script>
-    // Global Choices instances
-    let createChoicesInstance;
-    let updateChoicesInstance;
-    let tagFilterChoices;
-    let collectionFilterChoices;
+<script>
+    // --- Global State & Initialization ---
     let messageTimeout; 
+    
+    // EJS data is safely parsed here
+    const MARKET_COLLECTIONS_DATA = JSON.parse('<%- JSON.stringify(marketCollections) %>');
+    const INITIAL_PRODUCT_COUNT = parseInt('<%= productsWithoutBundles.length %>');
 
-    // 💡 NEW: Prevent browser's default hash scrolling
-    if ('scrollRestoration' in history) {
-      history.scrollRestoration = 'manual';
-    }
+    // State for custom filter
+    const selectedFilterTags = new Set(); 
+    
+    // State for custom product multi-select
+    const selectedProductIdsCreate = new Set();
+    const selectedProductIdsUpdate = new Set();
+    
+    // Map to store product info for chip rendering
+    const productInfoMap = new Map();
+
+    // Store all product list items once for quick lookup
+    let allProductListItems;
+
+    // --- Utility Functions ---
 
     function dismissMessage() {
       const message = document.getElementById('flash-message');
@@ -582,151 +684,410 @@
       document.getElementById(tabId).classList.add('active');
       document.querySelector(`.tab[onclick="openTab('${tabId}')"]`).classList.add('active');
     }
+    
+    /**
+     * Renders the product chips and manages visibility of list items.
+     * @param {boolean} isCreateTab - True for Create tab, false for Update tab.
+     */
+    function renderProductChips(isCreateTab) {
+        const selectedSet = isCreateTab ? selectedProductIdsCreate : selectedProductIdsUpdate;
+        const displayContainerId = isCreateTab ? 'selected_products_display' : 'selected_products_display_update';
+        const displayContainer = document.getElementById(displayContainerId);
+        
+        if (!displayContainer) return;
+        
+        displayContainer.innerHTML = '';
+        
+        selectedSet.forEach(productId => {
+            const product = productInfoMap.get(productId);
+            if (product) {
+                // 1. Render the chip
+                const chipEl = document.createElement('span');
+                chipEl.className = 'product-chip';
+                // Use a truncated version of the title for the chip
+                const chipText = product.title.length > 50 ? product.title.substring(0, 47) + '...' : product.title;
+                chipEl.innerHTML = `${chipText} <span class="product-chip-remove" data-id="${productId}">&times;</span>`;
+                displayContainer.appendChild(chipEl);
 
-    function initializeChoices() {
-      const choicesConfig = {
-        allowHTML: false,
-        searchEnabled: true,
-        removeItemButton: true,
-        maxItemCount: -1, 
-        renderSelectedChoices: 'always', 
-        dropdownParent: null,
-        placeholder: true,
-        placeholderValue: 'Start typing to search and select products...', 
-      };
-      
-      // Configuration for the filter selectors (standard dropdown)
-      const filterChoicesConfig = {
-        ...choicesConfig,
-        renderSelectedChoices: 'auto', // Default behavior for filters
-        placeholderValue: 'Select tags...',
-        maxItemCount: -1, 
-      };
+                // 2. Hide the corresponding list item
+                const listItem = document.querySelector(`.product-option-item[data-id="${productId}"]`);
+                if (listItem) {
+                    listItem.classList.add('hidden');
+                    listItem.classList.remove('selected'); 
+                }
+            }
+        });
+        
+        // 3. Unhide products that are no longer selected (must be done before re-filtering)
+        if (allProductListItems) {
+            allProductListItems.forEach(itemEl => {
+                const productId = itemEl.getAttribute('data-id');
+                if (!selectedSet.has(productId)) {
+                    itemEl.classList.remove('hidden');
+                }
+            });
+        }
+        
+        // 4. Re-filter the visible list items based on search/tags (if needed)
+        const activeFilters = isCreateTab ? Array.from(selectedFilterTags) : [];
+        const searchInputId = isCreateTab ? 'product_list_search_input' : 'update_list_search_input';
+        const listId = isCreateTab ? 'product_list_options' : 'update_list_options';
 
-
-      const createSelect = document.getElementById('create_product_ids');
-      const updateSelect = document.getElementById('update_product_ids');
-      const tagSelect = document.getElementById('filter_by_tag');
-      const collectionSelect = document.getElementById('filter_by_collection');
-
-      if (createSelect && createSelect.options.length > 0) {
-        // 💡 UPDATED: Remove custom hideDropdown to use default behaviour (closed by default, open on click)
-        createChoicesInstance = new Choices(createSelect, choicesConfig);
-        // Do NOT call createChoicesInstance.showDropdown(); 
-      }
-
-      if (updateSelect && updateSelect.options.length > 0) {
-        updateChoicesInstance = new Choices(updateSelect, choicesConfig);
-        // Do NOT call updateChoicesInstance.showDropdown(); 
-      }
-      
-      // 💡 NEW: Initialize Choices for Filters
-      if (tagSelect) {
-        tagFilterChoices = new Choices(tagSelect, { ...filterChoicesConfig, placeholderValue: 'Select product tags...' });
-        tagSelect.addEventListener('change', filterProducts);
-      }
-      if (collectionSelect) {
-        collectionFilterChoices = new Choices(collectionSelect, { ...filterChoicesConfig, placeholderValue: 'Select collections/markets...' });
-        collectionSelect.addEventListener('change', filterProducts);
-      }
+        filterProductList(listId, searchInputId, activeFilters, isCreateTab);
     }
     
-    // 💡 UPDATED: Filtering logic function
-    function filterProducts() {
-        if (!createChoicesInstance) return;
+    // Function to handle click on a product list item
+    function toggleProductSelection(itemEl, isCreateTab) {
+        const productId = itemEl.getAttribute('data-id');
+        const selectedSet = isCreateTab ? selectedProductIdsCreate : selectedProductIdsUpdate;
+        const hiddenSelectId = isCreateTab ? 'create_product_ids' : 'update_product_ids_hidden';
+        const hiddenSelect = document.getElementById(hiddenSelectId);
 
-        // 1. Get selected filter values (all converted to lowercase for case-insensitive matching)
-        const selectedTags = tagFilterChoices ? tagFilterChoices.getValue(true).map(t => t.toLowerCase()) : [];
-        const selectedCollections = collectionFilterChoices ? collectionFilterChoices.getValue(true).map(c => c.toLowerCase()) : [];
+        if (selectedSet.has(productId)) {
+            selectedSet.delete(productId);
+        } else {
+            selectedSet.add(productId);
+        }
+        
+        // Update Chips and List Visibility
+        renderProductChips(isCreateTab);
+
+        // Update the hidden select element for form submission
+        hiddenSelect.innerHTML = '';
+        selectedSet.forEach(id => {
+            const option = document.createElement('option');
+            option.value = id;
+            option.selected = true;
+            hiddenSelect.appendChild(option);
+        });
+    }
+
+    /**
+     * Filters the product list based on the search query and active collection tags.
+     */
+    function filterProductList(listId, searchInputId, tagFilters, isCreateTab) {
+        const productList = document.getElementById(listId);
+        const searchInput = document.getElementById(searchInputId);
+        const query = searchInput.value.toLowerCase();
+        let visibleCount = 0;
+        
+        const currentSelectedSet = isCreateTab ? selectedProductIdsCreate : selectedProductIdsUpdate;
+
+        if (!productList) return;
+
+        Array.from(productList.children).forEach(itemEl => {
+            // Skip already selected items (they are handled by renderProductChips setting the 'hidden' class)
+            if (currentSelectedSet.has(itemEl.getAttribute('data-id'))) {
+                itemEl.classList.add('hidden');
+                return;
+            }
             
-        // Combine all unique filter tags
-        const allFilters = [...new Set([...selectedTags, ...selectedCollections])].filter(Boolean);
+            // Filtering logic for UNSELECTED items
+            const productTagsAttr = itemEl.getAttribute('data-tags'); // Only present on Create tab items
+            const productTitle = itemEl.getAttribute('data-title').toLowerCase();
+            const tagsArray = productTagsAttr ? productTagsAttr.toLowerCase().split(',').map(t => t.trim()).filter(Boolean) : [];
+            
+            // 1. Tag Filtering: Only for Create Tab
+            const matchesTagFilter = !isCreateTab || tagFilters.length === 0 || tagFilters.some(filterTag => tagsArray.includes(filterTag));
+            
+            // 2. Search Query Filtering
+            const matchesSearchQuery = productTitle.includes(query);
 
-        // 2. Get all original product options from the raw HTML select element
-        const rawSelect = document.getElementById('create_product_ids');
-        const allOptions = Array.from(rawSelect.options);
-        
-        // 3. Keep track of currently selected items to re-select them after filtering
-        const currentlySelectedValues = createChoicesInstance.getValue(true);
-        
-        // 4. Create the new, filtered list of choices
-        const newChoices = allOptions
-            .filter(option => {
-                const productTagsAttr = option.getAttribute('data-tags');
-                
-                if (allFilters.length === 0) {
-                    return true; // Show all if no filters are selected
-                }
-                
-                if (!productTagsAttr) return false;
-                
-                // Convert product tags to an array of lowercase tags
-                const productTags = productTagsAttr.toLowerCase().split(',');
+            if (matchesTagFilter && matchesSearchQuery) {
+                itemEl.classList.remove('hidden');
+                visibleCount++;
+            } else {
+                itemEl.classList.add('hidden');
+            }
+        });
 
-                // Show product if it matches ANY of the selected filter tags
-                return allFilters.some(filterTag => productTags.includes(filterTag));
-            })
-            .map(option => ({
-                value: option.value,
-                label: option.textContent,
-                // Check if this option was selected before filtering
-                selected: currentlySelectedValues.includes(option.value), 
-                disabled: false,
-                customProperties: { tags: option.getAttribute('data-tags') }
-            }));
-
-        // 5. Add the filtered choices back
-        // The third argument (true) tells Choices to add the items instead of replacing all.
-        // We use clearChoices/setChoices to completely refresh the options list based on the filters.
-        createChoicesInstance.clearChoices(); 
-        createChoicesInstance.setChoices(newChoices, 'value', 'label', true);
-        
-        // 6. Update product count in the header
-        const productCountHeader = document.getElementById('create-bundle-header');
-        if (productCountHeader) {
-            productCountHeader.textContent = `Select Products and Set Initial Discounts (${newChoices.length} Products)`;
+        // Update results summary only for the Create tab
+        if (isCreateTab) {
+            // Total products visible is visibleCount (unselected) + selectedProductIdsCreate.size
+            updateResultSummary(visibleCount + currentSelectedSet.size, tagFilters);
         }
     }
 
+    // Attach listeners for product search and selection
+    function attachProductListListeners() {
+        const createList = document.getElementById('product_list_options');
+        const createSearch = document.getElementById('product_list_search_input');
+        const updateList = document.getElementById('update_list_options');
+        const updateSearch = document.getElementById('update_list_search_input');
+        const createChipDisplay = document.getElementById('selected_products_display');
+        const updateChipDisplay = document.getElementById('selected_products_display_update');
 
+        // Store all list items once
+        allProductListItems = document.querySelectorAll('#product_list_options .product-option-item, #update_list_options .product-option-item');
+
+        // --- Create Tab Listeners ---
+        if (createList) {
+            // Selection logic (when clicking a list item)
+            createList.addEventListener('click', (e) => {
+                if (e.target.classList.contains('product-option-item')) {
+                    toggleProductSelection(e.target, true);
+                }
+            });
+        }
+        if (createSearch) {
+            // Search logic (when typing)
+            createSearch.addEventListener('input', () => {
+                filterProductList('product_list_options', 'product_list_search_input', Array.from(selectedFilterTags), true);
+            });
+        }
+        if (createChipDisplay) {
+            // Chip removal logic (when clicking 'x' on a chip)
+            createChipDisplay.addEventListener('click', (e) => {
+                if (e.target.classList.contains('product-chip-remove')) {
+                    const productId = e.target.getAttribute('data-id');
+                    const listItem = document.querySelector(`#product_list_options .product-option-item[data-id="${productId}"]`);
+                    if (listItem) {
+                        toggleProductSelection(listItem, true); // This will deselect, re-render chips, and re-filter
+                    }
+                }
+            });
+        }
+
+        // --- Update Tab Listeners ---
+        if (updateList) {
+            updateList.addEventListener('click', (e) => {
+                if (e.target.classList.contains('product-option-item')) {
+                    toggleProductSelection(e.target, false);
+                }
+            });
+        }
+        if (updateSearch) {
+            updateSearch.addEventListener('input', () => {
+                filterProductList('update_list_options', 'update_list_search_input', [], false);
+            });
+        }
+        if (updateChipDisplay) {
+             updateChipDisplay.addEventListener('click', (e) => {
+                if (e.target.classList.contains('product-chip-remove')) {
+                    const productId = e.target.getAttribute('data-id');
+                    const listItem = document.querySelector(`#update_list_options .product-option-item[data-id="${productId}"]`);
+                    if (listItem) {
+                        toggleProductSelection(listItem, false);
+                    }
+                }
+            });
+        }
+    }
+    
+    // --- Custom Filter Logic (Collection Tags) ---
+
+    function updateResultSummary(currentCount, activeFilters) {
+        const productCountHeader = document.getElementById('create-bundle-header');
+        const resultSummary = document.getElementById('result-summary');
+
+        if (productCountHeader && resultSummary) {
+            if (activeFilters.length > 0) {
+                const collectionTitles = activeFilters.map(tag => {
+                    const tagObject = MARKET_COLLECTIONS_DATA.find(c => c.tag && c.tag.toLowerCase() === tag);
+                    return tagObject ? tagObject.title : tag.toUpperCase();
+                }).join(', ');
+                
+                productCountHeader.textContent = `Select Products and Set Initial Discounts (${currentCount} Products)`;
+                resultSummary.textContent = `Showing ${currentCount} results for selected tags: ${collectionTitles}`;
+            } else {
+                 productCountHeader.textContent = `Select Products and Set Initial Discounts (${INITIAL_PRODUCT_COUNT} Products)`;
+                 resultSummary.textContent = `Showing ${INITIAL_PRODUCT_COUNT} results for all products.`;
+            }
+        }
+    }
+
+    /**
+     * Renders the selected tags (chips) and triggers the product list filter.
+     */
+    function renderSelectedTags() {
+        const display = document.getElementById('selected_tags_display');
+        const hiddenSelect = document.getElementById('filter_by_collection');
+        const optionsList = document.getElementById('filter_options_list');
+
+        display.innerHTML = '';
+        hiddenSelect.innerHTML = '';
+        
+        const activeFilters = Array.from(selectedFilterTags);
+
+        // 1. Manage List Item Visibility (Unhide all first, then hide selected)
+        optionsList.querySelectorAll('li').forEach(li => {
+            li.classList.remove('hidden');
+            li.classList.remove('selected');
+        });
+
+        activeFilters.forEach(tagValue => {
+            const tagObject = MARKET_COLLECTIONS_DATA.find(c => c.tag && c.tag.toLowerCase() === tagValue);
+            const tagTitle = tagObject ? tagObject.title : tagValue.toUpperCase();
+            
+            // 1. Render the chip (using the unified 'product-chip' style)
+            const tagEl = document.createElement('span');
+            tagEl.className = 'product-chip'; 
+            tagEl.innerHTML = `${tagTitle} <span class="selected-tag-remove" data-value="${tagValue}">&times;</span>`;
+            display.appendChild(tagEl);
+
+            // 2. Hide the corresponding list item
+            const listItem = optionsList.querySelector(`li[data-value="${tagValue}"]`);
+            if (listItem) {
+                listItem.classList.add('hidden');
+                listItem.classList.remove('selected'); 
+            }
+
+            // 3. Update the hidden select element for form submission 
+            const option = new Option(tagTitle, tagValue, true, true);
+            hiddenSelect.add(option);
+        });
+
+        // Toggle border-bottom of the tags container
+        if (display) {
+             display.style.borderBottom = activeFilters.length > 0 ? '1px solid var(--p-color-border-default)' : 'none';
+        }
+
+        // IMPORTANT: Re-filter the product list using the new tags
+        filterProductList('product_list_options', 'product_list_search_input', activeFilters, true);
+        
+        // Ensure the search input for tags remains visible
+        const tagSearchInput = document.getElementById('tag_search_input');
+        if (tagSearchInput) {
+            tagSearchInput.value = '';
+            tagSearchInput.dispatchEvent(new Event('input')); // Re-run search filter on the tag list itself
+        }
+    }
+
+    function toggleTag(tagValue, tagEl) {
+        const normalizedTagValue = tagValue.toLowerCase(); 
+
+        if (selectedFilterTags.has(normalizedTagValue)) {
+            selectedFilterTags.delete(normalizedTagValue);
+        } else {
+            selectedFilterTags.add(normalizedTagValue);
+        }
+        renderSelectedTags(); // Renders tags, manages list visibility, and calls filterProductList
+    }
+    
+    function attachCustomFilterListeners() {
+        const optionsList = document.getElementById('filter_options_list');
+        const searchInput = document.getElementById('tag_search_input');
+        const selectedTagsDisplay = document.getElementById('selected_tags_display');
+
+        if (!optionsList || !searchInput || !selectedTagsDisplay) return;
+
+        // 1. List Item Click Listener
+        optionsList.addEventListener('click', (e) => {
+            if (e.target.tagName === 'LI' && e.target.getAttribute('data-value')) {
+                const tagValue = e.target.getAttribute('data-value');
+                toggleTag(tagValue, e.target); 
+            }
+        });
+
+        // 2. Remove Tag Click Listener (Delegated)
+        selectedTagsDisplay.addEventListener('click', (e) => {
+            if (e.target.classList.contains('selected-tag-remove')) {
+                const tagValue = e.target.getAttribute('data-id') || e.target.getAttribute('data-value');
+                const liEl = optionsList.querySelector(`li[data-value="${tagValue}"]`);
+                toggleTag(tagValue, liEl); 
+            }
+        });
+        
+        // 3. Search Input Listener
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const listItems = optionsList.querySelectorAll('li');
+            
+            listItems.forEach(li => {
+                const title = li.textContent.toLowerCase();
+                const isSelected = selectedFilterTags.has(li.getAttribute('data-value'));
+
+                if (!isSelected && title.includes(query)) {
+                    li.classList.remove('hidden');
+                } else if (!isSelected) {
+                    li.classList.add('hidden');
+                }
+            });
+        });
+    }
+
+    // --- Default Selection Function ---
+    function selectDefaultProduct() {
+        const firstItem = document.querySelector('#product_list_options .product-option-item');
+        if (firstItem) {
+            // Programmatically select the first item
+            // We use setTimeout to ensure all event handlers and DOM are fully initialized
+            setTimeout(() => {
+                toggleProductSelection(firstItem, true);
+            }, 0);
+        }
+    }
+
+    // --- DOMContentLoaded Initialization ---
     document.addEventListener('DOMContentLoaded', () => {
-      // Initialize Choices.js for all fields
-      initializeChoices();
-
-      // 💡 NEW: Get tab from query parameter instead of hash
-      const urlParams = new URLSearchParams(window.location.search);
-      const tab = urlParams.get('tab') || 'create-bundles';
-      openTab(tab);
-
-      // 💡 NEW: Scroll to top if message is present, with slight delay to ensure DOM rendering
-      const messageElement = document.getElementById('flash-message');
-      if (messageElement) {
-        messageTimeout = setTimeout(dismissMessage, 10000);
-        // Use setTimeout to ensure scroll happens after DOM and Choices.js rendering
-        setTimeout(() => {
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }, 100);
-      }
-
-      // 💡 Add submit event listeners to both forms and pass tab parameter
-      const createForm = document.querySelector('#create-bundles .bundle-form');
-      const updateForm = document.querySelector('#update-bundles .bundle-form');
-
-      if (createForm) {
-        createForm.addEventListener('submit', (e) => {
-          showLoadingOverlay();
-          // Append tab parameter to form action
-          e.target.action = '/create-bundles?tab=create-bundles';
+        
+        if ('scrollRestoration' in history) {
+            history.scrollRestoration = 'manual';
+        }
+        
+        // Populate productInfoMap
+        const rawLists = document.querySelectorAll('#product_list_options, #update_list_options');
+        rawLists.forEach(list => {
+            list.querySelectorAll('.product-option-item').forEach(itemEl => {
+                const id = itemEl.getAttribute('data-id');
+                const title = itemEl.getAttribute('data-title');
+                productInfoMap.set(id, { id: id, title: title, element: itemEl });
+            });
         });
-      }
-      if (updateForm) {
-        updateForm.addEventListener('submit', (e) => {
-          showLoadingOverlay();
-          // Append tab parameter to form action
-          e.target.action = '/update-bundles?tab=update-bundles';
-        });
-      }
+
+        attachCustomFilterListeners();
+        attachProductListListeners();
+
+        // Run initial rendering and filtering
+        renderSelectedTags(); // Renders tag chips and triggers create product filter
+        renderProductChips(true); // Manages visibility for create tab
+        renderProductChips(false); // Manages visibility for update tab
+
+        // FIX: Select the first product by default ONLY if there are products available
+        if ('<%= productsWithoutBundles.length %>' > 0) {
+            selectDefaultProduct();
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const tab = urlParams.get('tab') || 'create-bundles';
+        openTab(tab);
+
+        const messageElement = document.getElementById('flash-message');
+        if (messageElement) {
+            messageTimeout = setTimeout(dismissMessage, 10000);
+            setTimeout(() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            }, 100);
+        }
+
+        // Add submit event listeners to both forms and pass tab parameter
+        const createForm = document.querySelector('#create-bundles .bundle-form');
+        const updateForm = document.querySelector('#update-bundles .bundle-form');
+
+        if (createForm) {
+            createForm.addEventListener('submit', (e) => {
+                if (selectedProductIdsCreate.size === 0) {
+                    alert('Please select at least one product before creating bundles.');
+                    e.preventDefault();
+                    return;
+                }
+                showLoadingOverlay();
+                e.target.action = '/create-bundles?tab=create-bundles';
+            });
+        }
+        if (updateForm) {
+            updateForm.addEventListener('submit', (e) => {
+                if (selectedProductIdsUpdate.size === 0) {
+                    alert('Please select at least one product before updating bundles.');
+                    e.preventDefault();
+                    return;
+                }
+                e.target.querySelector('#update_product_ids_hidden').name = 'product_ids';
+                showLoadingOverlay();
+                e.target.action = '/update-bundles?tab=update-bundles';
+            });
+        }
     });
-  </script>
+</script>
 </body>
 </html>
