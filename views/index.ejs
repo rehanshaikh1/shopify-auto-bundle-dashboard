@@ -533,7 +533,7 @@
                           data-id="<%= product.id %>" 
                           data-tags="<%= product.tags ? product.tags.join(',') : '' %>"
                           data-title="<%= product.title %>">
-                          <%= product.title %> (ID: <%= product.id %>) [Collection Tags: <%= product.tags ? product.tags.join(', ') : '' %>]
+                          <%= product.title %> (ID: <%= product.id %>) [Tags: <%= product.tags ? product.tags.join(', ') : '' %>]
                       </li>
                   <% }) %>
               </ul>
