@@ -3,7 +3,6 @@
 <head>
   <title>Product Bundle Dashboard</title>
   
-  <!-- Choices.js CSS -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/choices.js/1.1.6/styles/css/choices.css" xintegrity="sha512-0bYNWBaGnMqLCuum81OA7oZo7/pIEjWb/ad3vdKuKlgTZXalLMDkRT3P4Z262/aQBnNuznUg3WpTb5Vgu11abw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   
   <style>
@@ -387,7 +386,6 @@
 </head>
 <body>
   <h1>Product Bundles</h1>
-  <!-- 💡 NEW: Loading Overlay -->
   <div id="loading-overlay" class="loading-overlay">
     <div class="loading-spinner"></div>
     <span class="loading-text">Processing...</span>
@@ -401,7 +399,6 @@
   %>
       <div class="flash-message <%= messageClass %>" id="flash-message">
           <%- decodedMessage.replace(/<br>/g, '\n') %>
-          <!-- 💡 Close button added -->
           <button class="close-button" onclick="dismissMessage()">
               &times;
           </button>
@@ -421,10 +418,43 @@
       // FIX: Calculate productsWithoutBundles before the h3 tag
       const bundledProductIds = bundledProducts.map(p => p.id.toString());
       const productsWithoutBundles = products.filter(p => !bundledProductIds.includes(p.id.toString()));
+
+      // 💡 NEW: Extract all unique tags for filter options
+      const allUniqueTags = [...new Set(products.flatMap(p => p.tags))].filter(Boolean).sort();
     %>
     <div id="create-bundles" class="tab-content active">
-      <h3>Select Products and Set Initial Discounts (<%= productsWithoutBundles.length %> Products)</h3>
-      <p>Non Bundled product with sufficient inventory quantity are listed below :</p>
+      <h3 id="create-bundle-header">Select Products and Set Initial Discounts (<%= productsWithoutBundles.length %> Products)</h3>
+      <p>Non-bundled products with sufficient inventory quantity are listed below.</p>
+      
+      <div class="product-filter card" style="padding: 15px; margin-bottom: 20px;">
+          <div class="card-header" style="border-bottom: none; padding-bottom: 0; margin-bottom: 10px;">
+              <h3 style="margin-bottom: 0;">Product Filters</h3>
+              <h5 style="margin-top: 5px; margin-bottom: 5px; font-weight: 400; color: var(--p-color-text-default);">Use these filters to narrow down the product list below.</h5>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+              <div class="input-field">
+                  <label for="filter_by_tag">Filter by Tag:</label>
+                  <select id="filter_by_tag" multiple>
+                      <% allUniqueTags.forEach(tag => { %>
+                          <option value="<%= tag %>"><%= tag %></option>
+                      <% }) %>
+                  </select>
+              </div>
+
+              <div class="input-field">
+                  <label for="filter_by_collection">Filter by Market/Collection (Tags):</label>
+                  <select id="filter_by_collection" multiple>
+                      <% 
+                        // Use a fixed list of your market tags for simplicity, assuming they map 1:1 with primary tags
+                        const marketTags = ['DE', 'SE', 'FR', 'IT', 'FI', 'ES', 'NL', 'NO'];
+                        marketTags.forEach(tag => { 
+                      %>
+                          <option value="<%= tag %>"><%= tag %></option>
+                      <% }); %>
+                  </select>
+              </div>
+          </div>
+      </div>
       <form class="bundle-form" action="/create-bundles" method="POST">
         <label for="create_product_ids">Select Products (without bundles):</label>
         
@@ -433,7 +463,7 @@
         <% } else { %>
           <select name="product_ids" id="create_product_ids" multiple>
             <% productsWithoutBundles.forEach(product => { %>
-              <option value="<%= product.id %>"><%= product.title %> (ID: <%= product.id %>)</option>
+              <option value="<%= product.id %>" data-tags="<%= product.tags ? product.tags.join(',') : '' %>"><%= product.title %> (ID: <%= product.id %>)</option>
             <% }) %>
           </select>
           
@@ -507,7 +537,6 @@
               <td><%= product.title %> (<%= product.id %>)</td>
               <td><%= product.bundles.map(b => b.type).join(", ") %></td>
               <td>
-                <!-- FIX: Added target="_top" to break out of the iframe and navigate the parent window -->
                 <a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" class="manage-button" target="_top">Manage Variants</a>
               </td>
             </tr>
@@ -516,10 +545,13 @@
       </table>
     <% } %>
   </div>
-  <!-- Choices.js JavaScript -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/choices.js/1.1.6/choices.min.js" xintegrity="sha512-7PQ3MLNFhvDn/IQy12+1+jKcc1A/Yx4KuL62Bn6+ztkiitRVW1T/7ikAh675pOs3I+8hyXuRknDpTteeptw4Bw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script>
-    // Global variable to store the timeout handle for the message dismissal
+    // Global Choices instances
+    let createChoicesInstance;
+    let updateChoicesInstance;
+    let tagFilterChoices;
+    let collectionFilterChoices;
     let messageTimeout; 
 
     // 💡 NEW: Prevent browser's default hash scrolling
@@ -527,7 +559,6 @@
       history.scrollRestoration = 'manual';
     }
 
-    // 💡 Function to dismiss the flash message
     function dismissMessage() {
       const message = document.getElementById('flash-message');
       if (message) {
@@ -541,7 +572,6 @@
       }
     }
 
-    // 💡 Function to show loading overlay
     function showLoadingOverlay() {
       const loadingOverlay = document.getElementById('loading-overlay');
       if (loadingOverlay) {
@@ -568,35 +598,116 @@
         placeholder: true,
         placeholderValue: 'Start typing to search and select products...', 
       };
+      
+      const filterChoicesConfig = {
+        ...choicesConfig,
+        renderSelectedChoices: 'auto', // Default behavior for filters
+        placeholderValue: 'Select tags...',
+        maxItemCount: -1, 
+      };
+
 
       const createSelect = document.getElementById('create_product_ids');
       const updateSelect = document.getElementById('update_product_ids');
+      const tagSelect = document.getElementById('filter_by_tag');
+      const collectionSelect = document.getElementById('filter_by_collection');
 
       if (createSelect && createSelect.options.length > 0) {
-        const createChoices = new Choices(createSelect, choicesConfig);
-        createChoices.hideDropdown = function() {
+        createChoicesInstance = new Choices(createSelect, choicesConfig);
+        // Custom logic to keep product list open
+        createChoicesInstance.hideDropdown = function() {
           this.containerOuter.classList.add('is-open');
           this.containerOuter.classList.add('is-focused');
           this.dropdown.element.style.visibility = 'visible';
           this.dropdown.element.style.opacity = '1';
         };
-        createChoices.showDropdown();
+        createChoicesInstance.showDropdown();
       }
 
       if (updateSelect && updateSelect.options.length > 0) {
-        const updateChoices = new Choices(updateSelect, choicesConfig);
-        updateChoices.hideDropdown = function() {
+        updateChoicesInstance = new Choices(updateSelect, choicesConfig);
+        updateChoicesInstance.hideDropdown = function() {
           this.containerOuter.classList.add('is-open');
           this.containerOuter.classList.add('is-focused');
           this.dropdown.element.style.visibility = 'visible';
           this.dropdown.element.style.opacity = '1';
         };
-        updateChoices.showDropdown();
+        updateChoicesInstance.showDropdown();
+      }
+      
+      // 💡 NEW: Initialize Choices for Filters
+      if (tagSelect) {
+        tagFilterChoices = new Choices(tagSelect, { ...filterChoicesConfig, placeholderValue: 'Select product tags...' });
+        tagSelect.addEventListener('change', filterProducts);
+      }
+      if (collectionSelect) {
+        collectionFilterChoices = new Choices(collectionSelect, { ...filterChoicesConfig, placeholderValue: 'Select collections/markets...' });
+        collectionSelect.addEventListener('change', filterProducts);
       }
     }
+    
+    // 💡 NEW: Filtering logic function
+    function filterProducts() {
+        if (!createChoicesInstance) return;
+
+        // 1. Get selected filter values
+        const selectedTags = tagFilterChoices ? tagFilterChoices.getValue(true) : [];
+        // Map collection tags (e.g., "DE" or "FI 2") to their lower-cased primary tag (e.g., "de" or "fi")
+        const selectedCollections = collectionFilterChoices 
+            ? collectionFilterChoices.getValue(true).map(c => c.toLowerCase().split(' ')[0]) 
+            : [];
+            
+        // Combine all unique filter tags
+        const allFilters = [...new Set([...selectedTags, ...selectedCollections])].filter(Boolean);
+
+        // 2. Get all original product options from the raw HTML select element
+        const rawSelect = document.getElementById('create_product_ids');
+        const allOptions = Array.from(rawSelect.options);
+        
+        // 3. Keep track of currently selected items to re-select them after filtering
+        const currentlySelectedValues = createChoicesInstance.getValue(true);
+        
+        // 4. Create the new, filtered list of choices
+        const newChoices = allOptions
+            .filter(option => {
+                // Check against the data-tags attribute on the raw option element
+                const productTagsAttr = option.getAttribute('data-tags');
+                if (allFilters.length === 0) {
+                    return true; // Show all if no filters are selected
+                }
+                
+                if (!productTagsAttr) return false;
+                
+                const productTags = productTagsAttr.toLowerCase().split(',');
+
+                // Show product if it matches ANY of the selected filter tags
+                return allFilters.some(filterTag => productTags.includes(filterTag.toLowerCase()));
+            })
+            .map(option => ({
+                value: option.value,
+                label: option.textContent,
+                // Check if this option was selected before filtering
+                selected: currentlySelectedValues.includes(option.value), 
+                disabled: false,
+                customProperties: { tags: option.getAttribute('data-tags') }
+            }));
+
+        // 5. Add the filtered choices back
+        createChoicesInstance.setChoices(newChoices, 'value', 'label', true);
+        
+        // Re-ensure the dropdown remains open and visible after filtering
+        createChoicesInstance.showDropdown();
+
+        // 6. Update product count in the header
+        const productCountHeader = document.getElementById('create-bundle-header');
+        if (productCountHeader) {
+            productCountHeader.textContent = `Select Products and Set Initial Discounts (${newChoices.length} Products)`;
+        }
+    }
+
 
     document.addEventListener('DOMContentLoaded', () => {
-      // Initialize Choices.js for both fields
+      // Initialize Choices.js for all fields
       initializeChoices();
 
       // 💡 NEW: Get tab from query parameter instead of hash
