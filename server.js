@@ -161,150 +161,170 @@ const PRODUCT_VARIANTS_BULK_CREATE_MUTATION = `
   }
 `;
 
+
 // --- Fetching Logic ---
+// --- Existing Product Fetching Logic (Updated to return mapped products) ---
 async function fetchProductsAndBundles() {
-  let products = [];
-  let bundledProducts = [];
-  let cursor = null;
+    let products = [];
+    let allUniqueTags = new Set(); // 💡 NEW: Set to store all unique tags
+    let cursor = null;
 
-  // ✅ CLEAN GRAPHQL QUERY (NO JS COMMENTS)
-  const query = `
-    query fetchProducts($first: Int!, $after: String) {
-      products(first: $first, after: $after) {
-        edges {
-          node {
-            id
-            title
-            tags
-            options {
-              id
-              name
-              values
-            }
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  selectedOptions {
-                    name
-                    value
-                  }
-                  price
-                  inventoryItem {
-                    id
-                    inventoryLevels(first: 1) {
-                      edges {
-                        node {
-                          quantities(names: ["available"]) {
-                            name
-                            quantity
-                          }
-                          location {
+    const query = `
+        query fetchProducts($first: Int!, $after: String) {
+            products(first: $first, after: $after) {
+                edges {
+                    node {
+                        id
+                        title
+                        tags
+                        options {
                             id
-                          }
+                            name
+                            values
                         }
-                      }
+                        variants(first: 10) {
+                            edges {
+                                node {
+                                    id
+                                    selectedOptions {
+                                        name
+                                        value
+                                    }
+                                    price
+                                    inventoryItem {
+                                        id
+                                        inventoryLevels(first: 1) {
+                                            edges {
+                                                node {
+                                                    quantities(names: ["available"]) {
+                                                        name
+                                                        quantity
+                                                    }
+                                                    location {
+                                                        id
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        images(first: 1) {
+                            edges {
+                                node {
+                                    id
+                                    src
+                                }
+                            }
+                        }
                     }
-                  }
                 }
-              }
-            }
-            images(first: 1) {
-              edges {
-                node {
-                  id
-                  src
+                pageInfo {
+                    hasNextPage
+                    endCursor
                 }
-              }
             }
-          }
         }
-        pageInfo {
-          hasNextPage
-          endCursor
+    `;
+
+    try {
+        let hasNextPage = true;
+        while (hasNextPage) {
+            const data = await shopifyGraphQLCall(query, { first: 250, after: cursor });
+            if (!data || !data.products || !data.products.edges) {
+                throw new Error(`Invalid response structure: ${JSON.stringify(data)}`);
+            }
+
+            products = products.concat(data.products.edges.map(e => e.node));
+            cursor = data.products.pageInfo.endCursor;
+            hasNextPage = data.products.pageInfo.hasNextPage;
         }
-      }
-    }
-  `;
 
-  try {
-    let hasNextPage = true;
-    while (hasNextPage) {
-      const data = await shopifyGraphQLCall(query, { first: 250, after: cursor });
-      if (!data || !data.products || !data.products.edges) {
-        throw new Error(`Invalid response structure: ${JSON.stringify(data)}`);
-      }
+        const mappedProducts = products
+            .map(product => {
+                const mappedProduct = {
+                    id: product.id.split('/').pop(),
+                    title: product.title,
+                    variants: product.variants?.edges?.map(e => e.node) || [],
+                    options: product.options,
+                    tags: product.tags
+                };
+                
+                // 💡 NEW: Collect all tags into the Set
+                (product.tags || []).forEach(tag => allUniqueTags.add(tag.trim().toLowerCase()));
 
-      products = products.concat(data.products.edges.map(e => e.node));
-      cursor = data.products.pageInfo.endCursor;
-      hasNextPage = data.products.pageInfo.hasNextPage;
-    }
-
-    const filteredProducts = products
-      .map(product => {
-        const mappedProduct = {
-          id: product.id.split('/').pop(),
-          title: product.title,
-          variants: product.variants.edges.map(e => e.node),
-          options: product.options,
-          tags: product.tags
-        };
-
-        return mappedProduct;
-      })
-      .filter(product => {
-        const baseVariant = product.variants.find(v => {
-          const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value;
-          return !["1x", "2x", "3x"].includes(option1);
-        }) || product.variants[0];
-
-        const baseInventory = baseVariant.inventoryItem?.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0;
-
-        const hasBundleVariants = product.variants.some(v => {
-          const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value;
-          return ["1x", "2x", "3x"].includes(option1);
-        });
-
-        const hasNonBundleOptions = product.options.some(opt => opt.name !== "Bundle" && opt.name !== "Title");
-
-        return baseInventory > 3 && !hasBundleVariants && !hasNonBundleOptions;
-      })
-      .sort((a, b) => a.title.localeCompare(b.title));
-
-    bundledProducts = products
-      .filter(product =>
-        product.options.some(opt =>
-          opt.name === "Bundle" &&
-          opt.values.includes("1x") &&
-          opt.values.includes("2x") &&
-          opt.values.includes("3x")
-        )
-      )
-      .map(product => {
-        let bundles = [];
-        product.variants.edges.forEach(({ node: variant }) => {
-          const option1 = variant.selectedOptions.find(opt => opt.name === "Bundle")?.value;
-          if (["1x", "2x", "3x"].includes(option1)) {
-            const available = variant.inventoryItem.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0;
-            bundles.push({
-              type: option1,
-              variantId: variant.id.split('/').pop(),
-              price: parseFloat(variant.price).toFixed(2),
-              available
+                return mappedProduct;
             });
-          }
-        });
-        bundles.sort((a, b) => parseInt(a.type) - parseInt(b.type));
-        return bundles.length > 0 ? { id: product.id.split('/').pop(), title: product.title, bundles } : null;
-      })
-      .filter(p => p !== null)
-      .sort((a, b) => a.title.localeCompare(b.title));
 
-    return { products: filteredProducts, bundledProducts };
-  } catch (err) {
-    console.error("Error in fetchProductsAndBundles:", err.message);
-    throw new Error(`Failed to fetch products: ${err.message}`);
-  }
+        const filteredProducts = mappedProducts
+            .filter(product => {
+                const variants = product.variants;
+                
+                const baseVariant = variants.find(v => {
+                    const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value;
+                    return !["1x", "2x", "3x"].includes(option1);
+                }) || variants[0];
+
+                if (!baseVariant) return false;
+
+                const baseInventory = baseVariant.inventoryItem?.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0;
+
+                const hasBundleVariants = variants.some(v => {
+                    const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value;
+                    return ["1x", "2x", "3x"].includes(option1);
+                });
+
+                const hasNonBundleOptions = product.options.some(opt => opt.name !== "Bundle" && opt.name !== "Title");
+
+                return baseInventory > 3 && !hasBundleVariants && !hasNonBundleOptions;
+            })
+            .sort((a, b) => a.title.localeCompare(b.title));
+
+        const bundledProducts = mappedProducts
+            .filter(product =>
+                product.options.some(opt =>
+                    opt.name === "Bundle" &&
+                    opt.values.includes("1x") &&
+                    opt.values.includes("2x") &&
+                    opt.values.includes("3x")
+                )
+            )
+            .map(product => {
+                let bundles = [];
+                (product.variants || []).forEach(variant => { 
+                    const option1 = variant.selectedOptions.find(opt => opt.name === "Bundle")?.value;
+                    if (["1x", "2x", "3x"].includes(option1)) {
+                        const available = variant.inventoryItem.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0;
+                        bundles.push({
+                            type: option1,
+                            variantId: variant.id.split('/').pop(),
+                            price: parseFloat(variant.price).toFixed(2),
+                            available
+                        });
+                    }
+                });
+                bundles.sort((a, b) => parseInt(a.type) - parseInt(b.type));
+                return bundles.length > 0 ? { id: product.id.split('/').pop(), title: product.title, bundles } : null;
+            })
+            .filter(p => p !== null)
+            .sort((a, b) => a.title.localeCompare(b.title));
+
+        // 💡 UPDATED RETURN: Return products, bundles, AND all unique tags
+        return { 
+            filteredProducts, 
+            bundledProducts,
+            allUniqueTags: Array.from(allUniqueTags).sort()
+        };
+    } catch (err) {
+        console.error("Error in fetchProductsAndBundles:", err.message);
+        throw new Error(`Failed to fetch products: ${err.message}`);
+    }
+}
+
+async function fetchData() {
+    // Only one API call needed now
+    return fetchProductsAndBundles(); 
 }
 
 
@@ -361,7 +381,8 @@ async function fetchBundleMappings() {
       );
       mappings = mappings.concat(bundleProds.map(p => {
         const variantIds = { "1x": null, "2x": null, "3x": null };
-        p.variants.edges.forEach(({ node }) => {
+        // ✅ FIX 3: Safely access variants.edges
+        (p.variants?.edges || []).forEach(({ node }) => {
           const option1 = node.selectedOptions.find(opt => opt.name === "Bundle")?.value;
           if (["1x", "2x", "3x"].includes(option1)) {
             variantIds[option1] = node.id.split('/').pop();
@@ -382,27 +403,45 @@ async function fetchBundleMappings() {
     throw new Error(`Failed to fetch bundle mappings: ${err.message}`);
   }
 }
-
 // --- Express Routes ---
 app.get("/", async (req, res) => {
-  try {
-    const { products, bundledProducts } = await fetchProductsAndBundles();
-    res.render("index", { products, bundledProducts, shopDomain: SHOP, message: req.query.message });
-  } catch (err) {
-    console.error("Error fetching products in GET /:", err);
-    res.status(500).send(`Error fetching products: ${err.message}`);
-  }
+    try {
+        // Renamed structure from fetchData to match new return
+        const { filteredProducts, bundledProducts, allUniqueTags } = await fetchData(); 
+        
+        // Pass products (renamed back for EJS consistency), bundledProducts, and allUniqueTags
+        // marketCollections is now effectively replaced by allUniqueTags
+        res.render("index", { 
+            products: filteredProducts, 
+            bundledProducts, 
+            marketCollections: allUniqueTags.map(tag => ({ title: tag.toUpperCase(), tag })), // Map tags to the old collection structure
+            shopDomain: SHOP, 
+            message: req.query.message 
+        });
+    } catch (err) {
+        console.error("Error fetching data in GET /:", err);
+        res.status(500).send(`Error fetching data: ${err.message}`);
+    }
 });
 app.post("/create-bundles", async (req, res) => {
   const LOCAL_API_VERSION = "2025-01";
   const CONCURRENCY_CHUNK_SIZE = 15;
   const BATCH_DELAY_MS = 300;
 
-  let { product_ids, discount2 = 0, discount3 = 0, add_image = "false" } = req.body;
+  // --- START MODIFICATION 1: Retrieve bundle_text ---
+  let { product_ids, discount2 = 0, discount3 = 0, add_image = "false", bundle_text } = req.body;
+  
+  if (!bundle_text) {
+    bundle_text = ""; 
+  }
+  // --- END MODIFICATION 1 ---
+  
   product_ids = Array.isArray(product_ids) ? product_ids : [product_ids];
+  discount2 = parseFloat(discount2); // Ensure discount is a float
+  discount3 = parseFloat(discount3); // Ensure discount is a float
   add_image = add_image === "true";
 
-  console.log("POST /create-bundles received:", { product_ids, discount2, discount3, add_image });
+  console.log("POST /create-bundles received:", { product_ids, discount2, discount3, add_image, bundle_text });
 
   if (!product_ids || product_ids.length === 0) {
     return res.redirect(
@@ -410,7 +449,7 @@ app.post("/create-bundles", async (req, res) => {
     );
   }
 
-  // GraphQL helper
+  // GraphQL helper (kept for other operations)
   const shopifyGraphQLCall = async (query, variables = {}) => {
     try {
       const response = await axios.post(
@@ -428,6 +467,24 @@ app.post("/create-bundles", async (req, res) => {
     } catch (err) {
       throw new Error(`GraphQL call failed: ${err.message}`);
     }
+  };
+  
+  // REST API helper (Assuming you have shopifyApiCall defined elsewhere, likely using Axios/fetch)
+  // If shopifyApiCall is NOT defined, replace with your preferred REST client logic (e.g., Axios post/put)
+  const shopifyApiCall = async (method, url, data = null) => {
+    // This is a placeholder/assumption. Ensure your actual REST wrapper is available.
+    // For this example, we assume `axios` is available and TOKEN/SHOP are defined.
+    const config = {
+        method: method.toLowerCase(),
+        url: url,
+        headers: {
+            "X-Shopify-Access-Token": TOKEN,
+            "Content-Type": "application/json",
+        },
+        data: data
+    };
+    const response = await axios(config);
+    return response.data;
   };
 
   // Remove Default Title variant
@@ -505,6 +562,29 @@ app.post("/create-bundles", async (req, res) => {
       let data = await shopifyGraphQLCall(productQuery, { id: productGid });
       const product = data?.product;
       if (!product) throw new Error(`Product not found (${product_id})`);
+      
+      // --- START MODIFICATION 2: Set bundle.extra_text metafield using REST API ---
+      if (bundle_text !== "") {
+          const metafieldUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json`;
+          
+         const metafieldData = {
+              metafield: {
+                  namespace: "bundle",
+                  key: "extra_text", 
+                  value: bundle_text,
+                  // FIX: Using 'single_line_text_field' as requested
+                  type: "single_line_text_field" 
+              }
+          };
+
+          try {
+              await shopifyApiCall("post", metafieldUrl, metafieldData);
+              console.log(`📝 Metafield 'bundle.extra_text' set (type: string) via REST for product ${product_id}`);
+          } catch (err) {
+              console.warn(`⚠️ Metafield update failed for ${product_id}: ${err.message}`);
+          }
+      }
+      // --- END MODIFICATION 2 ---
 
       const variants = product.variants.edges.map((e) => e.node);
       if (!variants.length) throw new Error("No variants found.");
@@ -626,7 +706,6 @@ app.post("/create-bundles", async (req, res) => {
     .join("<br>");
   res.redirect(`/?message=${encodeURIComponent(message)}#create-bundles`);
 });
-
 
 
 app.post("/update-bundles", async (req, res) => {
