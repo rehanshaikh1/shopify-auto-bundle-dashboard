@@ -246,7 +246,8 @@ async function fetchProductsAndBundles() {
           id: product.id.split('/').pop(),
           title: product.title,
           variants: product.variants.edges.map(e => e.node),
-          options: product.options
+          options: product.options,
+                          tags: product.tags // <--- ADD THIS LINE
         };
         // Log product details for debugging
         const baseVariant = mappedProduct.variants.find(v => {
