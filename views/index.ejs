@@ -626,7 +626,9 @@
               <td><%= product.title %> (<%= product.id %>)</td>
               <td><%= product.bundles.map(b => b.type).join(", ") %></td>
               <td>
-                <a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" class="manage-button" target="_top" target="_blank">Manage Variants</a>
+<a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" class="manage-button" onclick="window.open(this.href, '_blank'); return false;">
+  Manage Variants
+</a>
               </td>
             </tr>
           <% }) %>
