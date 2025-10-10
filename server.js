@@ -162,11 +162,12 @@ const PRODUCT_VARIANTS_BULK_CREATE_MUTATION = `
 `;
 
 // --- Fetching Logic ---
-
 async function fetchProductsAndBundles() {
   let products = [];
   let bundledProducts = [];
   let cursor = null;
+
+  // ✅ CLEAN GRAPHQL QUERY (NO JS COMMENTS)
   const query = `
     query fetchProducts($first: Int!, $after: String) {
       products(first: $first, after: $after) {
@@ -174,8 +175,7 @@ async function fetchProductsAndBundles() {
           node {
             id
             title
-            tags               // <--- 💡 ADDED: Fetch product tags
-            
+            tags
             options {
               id
               name
@@ -234,14 +234,12 @@ async function fetchProductsAndBundles() {
       if (!data || !data.products || !data.products.edges) {
         throw new Error(`Invalid response structure: ${JSON.stringify(data)}`);
       }
+
       products = products.concat(data.products.edges.map(e => e.node));
       cursor = data.products.pageInfo.endCursor;
       hasNextPage = data.products.pageInfo.hasNextPage;
     }
 
-    // console.log(`Fetched ${products.length} products from Shopify`);
-
-    // Process products for the "Create Bundles" list
     const filteredProducts = products
       .map(product => {
         const mappedProduct = {
@@ -249,50 +247,30 @@ async function fetchProductsAndBundles() {
           title: product.title,
           variants: product.variants.edges.map(e => e.node),
           options: product.options,
-          tags: product.tags // <--- 💡 CONFIRMED: Tags are mapped here
+          tags: product.tags
         };
-        // Log product details for debugging
-        const baseVariant = mappedProduct.variants.find(v => {
-          const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value;
-          return !["1x", "2x", "3x"].includes(option1);
-        }) || mappedProduct.variants[0];
-        const baseInventory = baseVariant.inventoryItem?.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0;
-        const hasBundleVariants = mappedProduct.variants.some(v => {
-          const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value;
-          return ["1x", "2x", "3x"].includes(option1);
-        });
-        const hasNonBundleOptions = mappedProduct.options.some(opt => opt.name !== "Bundle" && opt.name !== "Title");
-        // console.log(`Product ${mappedProduct.id} (${mappedProduct.title}): inventory=${baseInventory}, hasBundleVariants=${hasBundleVariants}, hasNonBundleOptions=${hasNonBundleOptions}`);
+
         return mappedProduct;
       })
       .filter(product => {
-        // Find the base variant (not 1x, 2x, or 3x)
         const baseVariant = product.variants.find(v => {
           const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value;
           return !["1x", "2x", "3x"].includes(option1);
-        }) || mappedProduct.variants[0];
+        }) || product.variants[0];
 
-        // Check inventory of base variant
         const baseInventory = baseVariant.inventoryItem?.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0;
 
-        // Check if product has Bundle variants
         const hasBundleVariants = product.variants.some(v => {
           const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value;
           return ["1x", "2x", "3x"].includes(option1);
         });
 
-        // Allow products with only "Title" option or no options, exclude those with other custom options
         const hasNonBundleOptions = product.options.some(opt => opt.name !== "Bundle" && opt.name !== "Title");
 
-        // Include products with base inventory > 3, no bundle variants, and no non-Title options
         return baseInventory > 3 && !hasBundleVariants && !hasNonBundleOptions;
       })
-      // Sort products A-Z by title
       .sort((a, b) => a.title.localeCompare(b.title));
 
-    // console.log(`Filtered ${filteredProducts.length} products for Create Bundles`);
-
-    // Process bundled products for the "Update Bundles" list
     bundledProducts = products
       .filter(product =>
         product.options.some(opt =>
@@ -320,10 +298,7 @@ async function fetchProductsAndBundles() {
         return bundles.length > 0 ? { id: product.id.split('/').pop(), title: product.title, bundles } : null;
       })
       .filter(p => p !== null)
-      // Sort bundled products A-Z by title
       .sort((a, b) => a.title.localeCompare(b.title));
-
-    // console.log(`Found ${bundledProducts.length} bundled products for Update Bundles`);
 
     return { products: filteredProducts, bundledProducts };
   } catch (err) {
@@ -331,6 +306,7 @@ async function fetchProductsAndBundles() {
     throw new Error(`Failed to fetch products: ${err.message}`);
   }
 }
+
 
 async function fetchBundleMappings() {
   let mappings = [];
