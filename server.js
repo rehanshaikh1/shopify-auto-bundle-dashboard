@@ -174,6 +174,8 @@ async function fetchProductsAndBundles() {
           node {
             id
             title
+            tags               // <--- 💡 ADDED: Fetch product tags
+            
             options {
               id
               name
@@ -247,7 +249,7 @@ async function fetchProductsAndBundles() {
           title: product.title,
           variants: product.variants.edges.map(e => e.node),
           options: product.options,
-                          tags: product.tags // <--- ADD THIS LINE
+          tags: product.tags // <--- 💡 CONFIRMED: Tags are mapped here
         };
         // Log product details for debugging
         const baseVariant = mappedProduct.variants.find(v => {
@@ -268,7 +270,7 @@ async function fetchProductsAndBundles() {
         const baseVariant = product.variants.find(v => {
           const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value;
           return !["1x", "2x", "3x"].includes(option1);
-        }) || product.variants[0];
+        }) || mappedProduct.variants[0];
 
         // Check inventory of base variant
         const baseInventory = baseVariant.inventoryItem?.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0;
