@@ -536,7 +536,7 @@ async function fetchBundleMappings() {
 // --- Metafield Constants (Ensure these match your created metafield) ---
 const VISITOR_NAMESPACE = "bundle";
 const VISITOR_KEY = "visitors";
-const VISITOR_TYPE = "integer"; 
+const VISITOR_TYPE = "number_integer"; 
 
 // 💡 NEW: Endpoint to track visitors and increment the metafield
 app.post("/track-bundle-visit", async (req, res) => {
@@ -566,7 +566,7 @@ app.post("/track-bundle-visit", async (req, res) => {
         namespace: 'bundle',
         key: 'visitors',
         value: visitorCount.toString(), // REST API requires the value as a string
-        type: 'integer',
+        type: VISITOR_TYPE, // <-- Ensure this uses the corrected constant
         owner_resource: "product",
       }
     };
