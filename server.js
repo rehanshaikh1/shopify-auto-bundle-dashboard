@@ -539,70 +539,87 @@ const VISITOR_KEY = "visitors";
 const VISITOR_TYPE = "number_integer"; 
 
 // 💡 NEW: Endpoint to track visitors and increment the metafield
-// 💡 FINAL FUNCTION: Enhanced logging to show (Previous Count -> New Count)
+const VISITORS_UPDATE_MUTATION = `
+  mutation SetMetafield($metafields: [MetafieldsSetInput!]!) {
+    metafieldsSet(metafields: $metafields) {
+      metafields {
+        id
+        value
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
+// 💡 NEW GRAPHQL QUERY for fetching the current count
+const VISITORS_FETCH_QUERY = `
+  query GetVisitorCount($id: ID!) {
+    product(id: $id) {
+      metafield(namespace: "${VISITOR_NAMESPACE}", key: "${VISITOR_KEY}") {
+        value
+      }
+    }
+  }
+`;
+
+
+// 💡 FINAL GRAPHQL FUNCTION: Uses GraphQL for persistence and relies on shopifyGraphQLCall
 app.post("/track-bundle-visit", async (req, res) => {
-  const LOCAL_API_VERSION = "2025-01"; 
   const { product_id } = req.body;
+  const productGid = `gid://shopify/Product/${product_id}`;
 
   if (!product_id) {
     return res.status(400).json({ success: false, message: "Product ID required." });
   }
 
   try {
-    // 1. FETCH: Retrieve the existing metafield
-    const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=${VISITOR_NAMESPACE}&key=${VISITOR_KEY}`;
-    const fetchResponse = await shopifyApiCall("get", queryUrl);
-
-    // 2. INITIALIZE/RETRIEVE COUNT
-    const metafields = fetchResponse?.metafields || []; 
-    const existingMetafield = metafields[0]; 
-
-    let numericMetafieldId = null;
-    let oldCount = 0; // 💡 Renamed to oldCount
+    // 1. FETCH: Retrieve the existing metafield count via GraphQL
+    const fetchResponse = await shopifyGraphQLCall(VISITORS_FETCH_QUERY, { id: productGid });
     
-    // Check if metafield was found and safely extract its ID and value
-    if (existingMetafield && existingMetafield.value) {
-        numericMetafieldId = existingMetafield.id.split('/').pop();
-        
-        const fetchedValue = parseInt(existingMetafield.value, 10);
-        
-        // Use fetched value if it's a valid number
+    // 2. INITIALIZE/RETRIEVE COUNT
+    const metafieldData = fetchResponse?.product?.metafield;
+    let previousCount = 0;
+    
+    if (metafieldData && metafieldData.value) {
+        const fetchedValue = parseInt(metafieldData.value, 10);
         if (!isNaN(fetchedValue)) {
-            oldCount = fetchedValue; // 💡 Store the retrieved value here
+            previousCount = fetchedValue;
         }
     }
     
     // 3. INCREMENT
-    const newCount = oldCount + 1; // Calculation uses the stored oldCount
+    const newCount = previousCount + 1; 
 
-    // 4. PREPARE DATA
-    const metafieldData = {
-      metafield: {
+    // 4. WRITE: Set the new count using the GraphQL mutation
+    const variables = {
+      metafields: [{
+        ownerId: productGid,
         namespace: VISITOR_NAMESPACE,
         key: VISITOR_KEY,
-        value: newCount.toString(),
-        type: VISITOR_TYPE, 
-        owner_resource: "product",
-      }
+        value: newCount.toString(), // Must be sent as a string
+        type: VISITOR_TYPE, // number_integer
+      }]
     };
 
-    if (numericMetafieldId) {
-      // 5A. UPDATE (PUT)
-      const updateUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/metafields/${numericMetafieldId}.json`;
-      metafieldData.metafield.id = numericMetafieldId; 
-      await shopifyApiCall("put", updateUrl, metafieldData);
-    } else {
-      // 5B. CREATE (POST)
-      const createUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json`;
-      await shopifyApiCall("post", createUrl, metafieldData);
-    }
+    const updateResponse = await shopifyGraphQLCall(VISITORS_UPDATE_MUTATION, variables);
     
-    // 6. LOGGING (Displays the transition)
-    console.log(`✅ Visitor count updated for product ${product_id}: ${oldCount} → ${newCount}`);
+    // Check for errors in the mutation response
+    const userErrors = updateResponse?.metafieldsSet?.userErrors || [];
+    if (userErrors.length > 0) {
+      // Throw an error if GraphQL explicitly rejected the write
+      throw new Error(`GraphQL Metafield Set Error: ${JSON.stringify(userErrors)}`);
+    }
+
+    // 5. LOGGING
+    console.log(`✅ Visitor count updated for product ${product_id}: ${previousCount} → ${newCount} (GraphQL)`);
     res.json({ success: true, count: newCount });
 
   } catch (error) {
     console.error(`Error tracking bundle visit for product ${product_id}: ${error.message}`);
+    // Respond with 500 status to client
     res.status(500).json({ success: false, message: error.message });
   }
 });
