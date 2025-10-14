@@ -549,19 +549,24 @@ app.post("/track-bundle-visit", async (req, res) => {
 
   try {
     // 1. Fetch existing metafield 
-    const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=${VISITOR_NAMESPACE}&key=${VISITOR_KEY}`;
+    const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=bundle&key=visitors`;
     const fetchResponse = await shopifyApiCall("get", queryUrl);
-    const existingMetafield = fetchResponse.metafields.find(m => m.key === VISITOR_KEY);
+
+    // 💡 FIX: Check if 'metafields' array exists in the response
+    const metafields = fetchResponse?.metafields || []; 
+    
+    // Use the safely accessed array
+    const existingMetafield = metafields.find(m => m.key === 'visitors');
     
     let visitorCount = existingMetafield ? parseInt(existingMetafield.value) : 0;
     visitorCount += 1; // Increment the count
 
     const metafieldData = {
       metafield: {
-        namespace: VISITOR_NAMESPACE,
-        key: VISITOR_KEY,
+        namespace: 'bundle',
+        key: 'visitors',
         value: visitorCount.toString(), // REST API requires the value as a string
-        type: VISITOR_TYPE,
+        type: 'integer',
         owner_resource: "product",
       }
     };
@@ -580,11 +585,12 @@ app.post("/track-bundle-visit", async (req, res) => {
     res.json({ success: true, count: visitorCount });
 
   } catch (error) {
-    console.error(`Error tracking bundle visit for ${product_id}:`, error.message);
+    // Send 500 status back to Vercel logs/browser
+    console.error(`Error tracking bundle visit for ${product_id}: ${error.message}`);
+    // You can now be more confident that any 500 status from here is an API/Token issue
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
 // --- Express Routes ---
 app.get("/", async (req, res) => {
     try {
