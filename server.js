@@ -188,220 +188,163 @@ const PRODUCT_VARIANTS_BULK_CREATE_MUTATION = `
 
 
 // --- GraphQL Queries for Reporting ---
-const BUNDLE_VARIANT_SALES_QUERY = (variantIds) => `
-  query GetVariantSales {
-    orders(query: "line_item_variant_ids:${variantIds.join(' OR ')}", first: 250) {
-      edges {
-        node {
-          lineItems(first: 250) {
-            edges {
-              node {
-                variant {
-                  id
-                }
-                quantity
-              }
-            }
-          }
-        }
-      }
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-    }
-  }
+// Around line 208
+// Replace the existing BUNDLE_VARIANT_SALES_QUERY (around line 208)
+
+const BUNDLE_VARIANT_SALES_QUERY = (variantIds) => ` 
+  query GetVariantSales($cursor: String) { 
+    orders(first: 250, after: $cursor) { 
+      edges { 
+        node { 
+          lineItems(first: 250) { 
+            edges { 
+              node { 
+                variant { 
+                  id 
+                } 
+                quantity 
+                sku 
+              } 
+            } 
+          } 
+        } 
+      } 
+      pageInfo { 
+        hasNextPage 
+        endCursor 
+      } 
+    } 
+  } 
 `;
 
 // --- Fetching Logic ---
 // --- Existing Product Fetching Logic (Updated to return mapped products) ---
 // Replace your entire async function fetchProductsAndBundles() with this:
-async function fetchProductsAndBundles() {
-    let products = [];
-    let allUniqueTags = new Set(); 
-    let cursor = null;
-    let allBundleVariantGids = []; // 💡 NEW: Collect all GIDs for sales query
+// Replace the entire existing fetchProductsAndBundles function (around line 312)
 
-    const query = `
-        query fetchProducts($first: Int!, $after: String) {
-            products(first: $first, after: $after) {
-                edges {
-                    node {
-                        id
-                        title
-                        tags
-                          metafield(namespace: "bundle", key: "visitors") { 
-                            value
-                        }
-                        options {
-                            id
-                            name
-                            values
-                        }
-                        variants(first: 10) {
-                            edges {
-                                node {
-                                    id
-                                    selectedOptions {
-                                        name
-                                        value
-                                    }
-                                    price
-                                    inventoryItem {
-                                        id
-                                        inventoryLevels(first: 1) {
-                                            edges {
-                                                node {
-                                                    quantities(names: ["available"]) {
-                                                        name
-                                                        quantity
-                                                    }
-                                                    location {
-                                                        id
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        images(first: 1) {
-                            edges {
-                                node {
-                                    id
-                                    src
-                                }
-                            }
-                        }
-                    }
-                }
-                pageInfo {
-                    hasNextPage
-                    endCursor
-                }
-            }
-        }
-    `;
+async function fetchProductsAndBundles() { 
+    let products = []; 
+    let allUniqueTags = new Set();  
+    let cursor = null; 
+    let allBundleVariantGids = []; 
+    // 💡 NEW MAP: Stores stable SKU -> current GID
+    const skuToGidMap = new Map(); 
 
-    try {
-        let hasNextPage = true;
-        while (hasNextPage) {
-            const data = await shopifyGraphQLCall(query, { first: 250, after: cursor });
-            if (!data || !data.products || !data.products.edges) {
-                throw new Error(`Invalid response structure: ${JSON.stringify(data)}`);
-            }
+    // 🎯 CRITICAL FIX: Single-line query to eliminate the syntax error source
+    const query = "query fetchProducts($first: Int!, $after: String) { products(first: $first, after: $after) { edges { node { id title tags metafield(namespace: \"bundle\", key: \"visitors\") { value } options { id name values } variants(first: 10) { edges { node { id sku selectedOptions { name value } price inventoryItem { id inventoryLevels(first: 1) { edges { node { quantities(names: [\"available\"]) { name quantity } location { id } } } } } } } } images(first: 1) { edges { node { id src } } } } } pageInfo { hasNextPage endCursor } } }";
 
-            products = products.concat(data.products.edges.map(e => e.node));
-            cursor = data.products.pageInfo.endCursor;
+    try { 
+        let hasNextPage = true; 
+        while (hasNextPage) { 
+            const data = await shopifyGraphQLCall(query, { first: 250, after: cursor }); 
+            if (!data || !data.products || !data.products.edges) { 
+                throw new Error(`Invalid response structure: ${JSON.stringify(data)}`); 
+            } 
+
+            products = products.concat(data.products.edges.map(e => e.node)); 
+            cursor = data.products.pageInfo.endCursor; 
             hasNextPage = data.products.pageInfo.hasNextPage;
-        }
+        } 
 
-        const mappedProducts = products
-            .map(product => {
-                const mappedProduct = {
-                    id: product.id.split('/').pop(),
-                    title: product.title,
-                    // 💡 ADDED: Capture the metafield value from the product object
-                    visitors: product.metafield ? parseInt(product.metafield.value) : 0, 
-                    variants: product.variants?.edges?.map(e => e.node) || [],
-                    options: product.options,
-                    tags: product.tags
-                };
-                
-                (product.tags || []).forEach(tag => allUniqueTags.add(tag.trim().toLowerCase()));
-
-                return mappedProduct;
-            });
-
-        const filteredProducts = mappedProducts
-            .filter(product => {
-                const variants = product.variants;
-                
-                const baseVariant = variants.find(v => {
-                    const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value;
-                    return !["1x", "2x", "3x"].includes(option1);
-                }) || variants[0];
-
-                if (!baseVariant) return false;
-
-                const baseInventory = baseVariant.inventoryItem?.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0;
-
-                const hasBundleVariants = variants.some(v => {
-                    const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value;
-                    return ["1x", "2x", "3x"].includes(option1);
-                });
-
-                const hasNonBundleOptions = product.options.some(opt => opt.name !== "Bundle" && opt.name !== "Title");
-
-                // Note: filteredProducts already have the 'visitors' property, but it's not used in this section.
-
-                return baseInventory > 3 && !hasBundleVariants && !hasNonBundleOptions;
-            })
-            .sort((a, b) => a.title.localeCompare(b.title));
-
-        const bundledProducts = mappedProducts
-            .filter(product =>
-                product.options.some(opt =>
-                    opt.name === "Bundle" &&
-                    opt.values.includes("1x") &&
-                    opt.values.includes("2x") &&
-                    opt.values.includes("3x")
-                )
-            )
-            .map(product => {
-                let bundles = [];
-                // 💡 ACCESSING THE 'visitors' PROPERTY FROM MAPPED PRODUCT
-                const visitorCount = product.visitors; 
-                
-                (product.variants || []).forEach(variant => { 
-                    const option1 = variant.selectedOptions.find(opt => opt.name === "Bundle")?.value;
-                    if (["1x", "2x", "3x"].includes(option1)) {
-                        const available = variant.inventoryItem.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0;
-                        
-                        allBundleVariantGids.push(variant.id); // 💡 COLLECT GID
-
-                        bundles.push({
-                            type: option1,
-                            variantId: variant.id.split('/').pop(),
-                            variantGid: variant.id, // 💡 STORE GID
-                            price: parseFloat(variant.price).toFixed(2),
-                            available,
-                            totalOrders: 0 // Initialize to 0
-                        });
-                    }
-                });
-                bundles.sort((a, b) => parseInt(a.type) - parseInt(b.type));
-                return bundles.length > 0 ? { 
+        const mappedProducts = products 
+            .map(product => { 
+                const mappedProduct = { 
                     id: product.id.split('/').pop(), 
                     title: product.title, 
-                    bundles,
-                    // 💡 ATTACHING THE VISITOR COUNT HERE
-                    visitors: visitorCount 
-                } : null;
-            })
-            .filter(p => p !== null)
-            .sort((a, b) => a.title.localeCompare(b.title));
-            
-        // 💡 NEW STEP: Fetch and map sales data
-        const salesMap = await fetchAndAggregateSales(allBundleVariantGids);
+                    visitors: product.metafield ? parseInt(product.metafield.value) : 0,  
+                    variants: product.variants?.edges?.map(e => e.node) || [], 
+                    options: product.options, 
+                    tags: product.tags 
+                }; 
+                (product.tags || []).forEach(tag => allUniqueTags.add(tag.trim().toLowerCase())); 
+                return mappedProduct; 
+            }); 
 
-        bundledProducts.forEach(product => {
-            product.bundles.forEach(bundle => {
-                bundle.totalOrders = salesMap.get(bundle.variantGid) || 0;
-                delete bundle.variantGid; // Clean up the GID field before passing to EJS
-            });
-        });
+        const filteredProducts = mappedProducts 
+            .filter(product => { 
+                const variants = product.variants; 
+                const baseVariant = variants.find(v => { 
+                    const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value; 
+                    return !["1x", "2x", "3x"].includes(option1); 
+                }) || variants[0]; 
+                if (!baseVariant) return false; 
+                const baseInventory = baseVariant.inventoryItem?.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0; 
+                const hasBundleVariants = variants.some(v => { 
+                    const option1 = v.selectedOptions.find(opt => opt.name === "Bundle")?.value; 
+                    return ["1x", "2x", "3x"].includes(option1); 
+                }); 
+                const hasNonBundleOptions = product.options.some(opt => opt.name !== "Bundle" && opt.name !== "Title"); 
+                return baseInventory > 3 && !hasBundleVariants && !hasNonBundleOptions; 
+            }) 
+            .sort((a, b) => a.title.localeCompare(b.title)); 
 
-        return { 
-            filteredProducts, 
-            bundledProducts,
-            allUniqueTags: Array.from(allUniqueTags).sort()
-        };
-    } catch (err) {
-        console.error("Error in fetchProductsAndBundles:", err.message);
-        throw new Error(`Failed to fetch products: ${err.message}`);
-    }
+        const bundledProducts = mappedProducts 
+            .filter(product => 
+                product.options.some(opt => 
+                    opt.name === "Bundle" && 
+                    opt.values.includes("1x") && 
+                    opt.values.includes("2x") && 
+                    opt.values.includes("3x") 
+                ) 
+            ) 
+            .map(product => { 
+                let bundles = []; 
+                const visitorCount = product.visitors;  
+                 
+                (product.variants || []).forEach(variant => {  
+                    const option1 = variant.selectedOptions.find(opt => opt.name === "Bundle")?.value; 
+                    if (["1x", "2x", "3x"].includes(option1)) { 
+                        const available = variant.inventoryItem.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0; 
+                        
+                        const bundleSku = variant.sku;
+                         
+                        allBundleVariantGids.push(variant.id);
+                        if (bundleSku) {
+                            skuToGidMap.set(bundleSku, variant.id); 
+                        }
+
+                        bundles.push({ 
+                            type: option1, 
+                            variantId: variant.id.split('/').pop(), 
+                            variantGid: variant.id, 
+                            sku: bundleSku,
+                            price: parseFloat(variant.price).toFixed(2), 
+                            available, 
+                            totalOrders: 0 
+                        }); 
+                    } 
+                }); 
+                bundles.sort((a, b) => parseInt(a.type) - parseInt(b.type)); 
+                return bundles.length > 0 ? {  
+                    id: product.id.split('/').pop(),  
+                    title: product.title,  
+                    bundles, 
+                    visitors: visitorCount  
+                } : null; 
+            }) 
+            .filter(p => p !== null) 
+            .sort((a, b) => a.title.localeCompare(b.title)); 
+             
+        // 💡 Pass the SKU map for stable sales aggregation
+        const salesMap = await fetchAndAggregateSales(allBundleVariantGids, skuToGidMap); 
+
+        bundledProducts.forEach(product => { 
+            product.bundles.forEach(bundle => { 
+                bundle.totalOrders = salesMap.get(bundle.variantGid) || 0; 
+                delete bundle.variantGid; 
+                delete bundle.sku; 
+            }); 
+        }); 
+
+        return {  
+            filteredProducts,  
+            bundledProducts, 
+            allUniqueTags: Array.from(allUniqueTags).sort() 
+        }; 
+    } catch (err) { 
+        console.error("Error in fetchProductsAndBundles:", err.message); 
+        throw new Error(`Failed to fetch products: ${err.message}`); 
+    } 
 }
 async function fetchData() {
     // Only one API call needed now
@@ -409,52 +352,61 @@ async function fetchData() {
 }
 
 // 💡 NEW HELPER FUNCTION
-async function fetchAndAggregateSales(variantGids) {
-    if (variantGids.length === 0) return new Map();
+// Replace the entire existing fetchAndAggregateSales function (around line 527)
 
-    const salesMap = new Map();
-    let hasNextPage = true;
-    let cursor = null;
+async function fetchAndAggregateSales(variantGids, skuToGidMap) { 
+    // variantGids is now only used to check if there are any products to process
+    if (variantGids.length === 0) return new Map(); 
 
-    // Use a large loop/pagination if you expect more than 250 orders matching the filter
-    // For simplicity and to prevent hitting rate limits too hard, we limit the query.
-    // NOTE: Shopify's order query filter can only handle ~50 variant IDs in one OR clause.
-    // If you have many products, this logic needs to be enhanced with chunking.
-    const CHUNK_SIZE = 50; 
-    const chunks = [];
-    for (let i = 0; i < variantGids.length; i += CHUNK_SIZE) {
-        chunks.push(variantGids.slice(i, i + CHUNK_SIZE));
-    }
+    const skuSalesMap = new Map(); 
+    const finalGidSalesMap = new Map();
     
-    // Process chunks sequentially to manage query complexity
-    for (const chunk of chunks) {
-        let chunkCursor = null;
-        let chunkHasNextPage = true;
+    // Get all unique bundle SKUs for efficient internal filtering
+    const allBundleSkus = new Set(skuToGidMap.keys());
+    
+    // Pagination setup
+    let hasNextPage = true; 
+    let cursor = null; 
+    const MAX_PAGES = 10; // Safety limit to prevent rate limit issues
+    let pageCount = 0;
 
-        while (chunkHasNextPage) {
-            const query = BUNDLE_VARIANT_SALES_QUERY(chunk);
-            const data = await shopifyGraphQLCall(query, { after: chunkCursor });
-            
-            const orders = data?.orders?.edges || [];
-            
-            orders.forEach(orderEdge => {
-                orderEdge.node.lineItems.edges.forEach(lineItemEdge => {
-                    const variantId = lineItemEdge.node.variant?.id;
-                    const quantity = lineItemEdge.node.quantity;
-                    
-                    if (variantId && chunk.includes(variantId)) {
-                        // Aggregate quantities for accurate purchase count
-                        salesMap.set(variantId, (salesMap.get(variantId) || 0) + quantity);
-                    }
-                });
-            });
+    // We fetch broad orders without GID filter, relying on SKU for accurate filtering
+    while (hasNextPage && pageCount < MAX_PAGES) { 
+        // We use the BUNDLE_VARIANT_SALES_QUERY defined in step 1, passing the cursor
+        const query = BUNDLE_VARIANT_SALES_QUERY([]);
+        const data = await shopifyGraphQLCall(query, { cursor }); 
+         
+        const orders = data?.orders?.edges || []; 
+        pageCount++;
+         
+        orders.forEach(orderEdge => { 
+            orderEdge.node.lineItems.edges.forEach(lineItemEdge => { 
+                const orderSku = lineItemEdge.node.sku;
+                const quantity = lineItemEdge.node.quantity;
+                 
+                // CRITICAL: Filter based on the stable SKU
+                if (orderSku && allBundleSkus.has(orderSku)) { 
+                    skuSalesMap.set(orderSku, (skuSalesMap.get(orderSku) || 0) + quantity); 
+                }
+            }); 
+        }); 
 
-            chunkCursor = data.orders.pageInfo.endCursor;
-            chunkHasNextPage = data.orders.pageInfo.hasNextPage;
+        cursor = data.orders.pageInfo.endCursor; 
+        hasNextPage = data.orders.pageInfo.hasNextPage;
+        
+        // Respect rate limits 
+        if(hasNextPage) {
+            await new Promise(resolve => setTimeout(resolve, 500)); 
         }
-    }
+    } 
+    
+    // Map the aggregated quantities from stable SKU back to the current GID
+    skuToGidMap.forEach((currentGid, sku) => {
+        const totalSold = skuSalesMap.get(sku) || 0;
+        finalGidSalesMap.set(currentGid, totalSold);
+    });
 
-    return salesMap;
+    return finalGidSalesMap; 
 }
 async function fetchBundleMappings() {
   let mappings = [];
