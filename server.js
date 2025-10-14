@@ -222,6 +222,8 @@ const BUNDLE_VARIANT_SALES_QUERY = (variantIds) => `
 // Replace your entire async function fetchProductsAndBundles() with this:
 // Replace the entire existing fetchProductsAndBundles function (around line 312)
 
+// REPLACE the entire existing fetchProductsAndBundles function
+
 async function fetchProductsAndBundles() { 
     let products = []; 
     let allUniqueTags = new Set();  
@@ -278,7 +280,7 @@ async function fetchProductsAndBundles() {
             }) 
             .sort((a, b) => a.title.localeCompare(b.title)); 
 
-        const bundledProducts = mappedProducts 
+        let bundledProducts = mappedProducts 
             .filter(product => 
                 product.options.some(opt => 
                     opt.name === "Bundle" && 
@@ -290,7 +292,8 @@ async function fetchProductsAndBundles() {
             .map(product => { 
                 let bundles = []; 
                 const visitorCount = product.visitors;  
-                 
+                const productTags = product.tags || []; // 💡 Capture tags for client-side filtering
+
                 (product.variants || []).forEach(variant => {  
                     const option1 = variant.selectedOptions.find(opt => opt.name === "Bundle")?.value; 
                     if (["1x", "2x", "3x"].includes(option1)) { 
@@ -319,26 +322,36 @@ async function fetchProductsAndBundles() {
                     id: product.id.split('/').pop(),  
                     title: product.title,  
                     bundles, 
-                    visitors: visitorCount  
+                    visitors: visitorCount,
+                    tags: productTags // 💡 Include tags in the final object
                 } : null; 
             }) 
-            .filter(p => p !== null) 
-            .sort((a, b) => a.title.localeCompare(b.title)); 
+            .filter(p => p !== null); 
              
         // 💡 Pass the SKU map for stable sales aggregation
         const salesMap = await fetchAndAggregateSales(allBundleVariantGids, skuToGidMap); 
 
+        // 💡 Calculate total sales and conversion rate
         bundledProducts.forEach(product => { 
+            let totalSold = 0;
             product.bundles.forEach(bundle => { 
                 bundle.totalOrders = salesMap.get(bundle.variantGid) || 0; 
+                totalSold += bundle.totalOrders;
                 delete bundle.variantGid; 
                 delete bundle.sku; 
             }); 
+            
+            // Calculate and store conversion rate (0-100)
+            product.conversionRate = product.visitors > 0 ? (totalSold / product.visitors) * 100 : 0;
+            product.totalSold = totalSold; // Store total sold for the analytics column
         }); 
+
+        // Apply initial sorting (Title ASC) before sending to the client
+        bundledProducts.sort((a, b) => a.title.localeCompare(b.title));
 
         return {  
             filteredProducts,  
-            bundledProducts, 
+            bundledProducts, // Contains conversionRate, totalSold, and tags for client-side filtering
             allUniqueTags: Array.from(allUniqueTags).sort() 
         }; 
     } catch (err) { 
