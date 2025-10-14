@@ -617,7 +617,7 @@
           <tr>
             <th>Product Title (ID)</th>
             <th>Visitors</th> <th>Purchases</th> 
-            <th>Bundles Created</th>
+            <th style="display:none">Bundles Created</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -630,7 +630,7 @@
               <strong><%= product.visitors %></strong>
             </td>
             
-            <td>
+            <td style="display:none">
   <% product.bundles.forEach((bundle, index) => { %>
     <%= bundle.type.charAt(0) %>x: <strong><%= bundle.totalOrders %></strong><% if (index < product.bundles.length - 1) { %> | <% } %>
   <% }); %>
