@@ -631,7 +631,11 @@
    onclick="window.open(this.href, '_blank'); return false;">
   Manage Variants
 </a>
-
+<a href="#" 
+                   class="manage-button delete-button" 
+                   onclick="deleteBundle('<%= product.id %>', '<%= product.title %>'); return false;">
+                    Delete Bundle
+                </a>
 
               </td>
             </tr>
@@ -1094,6 +1098,30 @@
             });
         }
     });
+
+async function deleteBundle(productId, productTitle) {
+    const confirmation = confirm(`Are you sure you want to permanently delete ALL bundle variants (1x, 2x, 3x) and the Bundle option for ${productTitle}?`);
+
+    if (confirmation) {
+        showLoadingOverlay();
+        
+        // Dynamically create a hidden form for POST submission
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/delete-bundles';
+
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'product_id';
+        input.value = productId;
+
+        form.appendChild(input);
+        document.body.appendChild(form);
+
+        // Submit the form
+        form.submit();
+    }
+}
 </script>
 </body>
 </html>
