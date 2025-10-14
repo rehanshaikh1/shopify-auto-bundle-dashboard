@@ -612,10 +612,11 @@
     <% if (bundledProducts.length === 0) { %>
       <p class="no-bundles">No bundles created for any products.</p>
     <% } else { %>
-      <table>
+    <table>
         <thead>
           <tr>
             <th>Product Title (ID)</th>
+            <th>Visitors</th> <th>Purchases</th> 
             <th>Bundles Created</th>
             <th>Action</th>
           </tr>
@@ -624,16 +625,33 @@
           <% bundledProducts.forEach(product => { %>
             <tr>
               <td><%= product.title %> (<%= product.id %>)</td>
+              
+            <td> 
+              <strong><%= product.visitors %></strong>
+            </td>
+            
+            <td>
+  <% product.bundles.forEach((bundle, index) => { %>
+    <%= bundle.type.charAt(0) %>x: <strong><%= bundle.totalOrders %></strong><% if (index < product.bundles.length - 1) { %> | <% } %>
+  <% }); %>
+</td>
+              
               <td><%= product.bundles.map(b => b.type).join(", ") %></td>
-              <td>
-<a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" 
-   class="manage-button"
-   onclick="window.open(this.href, '_blank'); return false;">
-  Manage Variants
-</a>
-
-
-              </td>
+             <td style="display: flex; gap: 10px; align-items: center;">
+                <a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" 
+                   class="manage-button"
+                   onclick="window.open(this.href, '_blank'); return false;"
+                   style="margin-right: auto;">
+                  Manage Variants
+                </a>
+                
+                <form action="/delete-bundles" method="POST" onsubmit="return confirm('Are you sure you want to DELETE ALL BUNDLE VARIANTS for <%= product.title %>? This action cannot be undone.');">
+                    <input type="hidden" name="product_id" value="<%= product.id %>">
+                    <button type="submit" class="primary-button" style="background-color: #d9534f; border-color: #d9534f; padding: 6px 12px; margin-top: 0;">
+                        Delete
+                    </button>
+                </form>
+                </td>
             </tr>
           <% }) %>
         </tbody>
@@ -1066,7 +1084,7 @@
             }, 100);
         }
 
-        // Add submit event listeners to both forms and pass tab parameter
+        // Add submit event listeners to all forms and pass tab parameter
         const createForm = document.querySelector('#create-bundles .bundle-form');
         const updateForm = document.querySelector('#update-bundles .bundle-form');
 
@@ -1093,6 +1111,16 @@
                 e.target.action = '/update-bundles?tab=update-bundles';
             });
         }
+        
+        // 💡 NEW: Event listener for Delete forms using delegation on the table body
+        document.querySelector('tbody').addEventListener('submit', (e) => {
+            // Check if the submitted form's action is /delete-bundles
+            if (e.target.getAttribute('action') === '/delete-bundles') {
+                showLoadingOverlay();
+                // Set the correct return URL parameter
+                e.target.action = '/delete-bundles?tab=existing-bundles';
+            }
+        });
     });
 </script>
 </body>
