@@ -540,6 +540,7 @@ const VISITOR_TYPE = "number_integer";
 
 // 💡 NEW: Endpoint to track visitors and increment the metafield
 app.post("/track-bundle-visit", async (req, res) => {
+  // Use a local API version for consistency with REST calls
   const LOCAL_API_VERSION = "2025-01"; 
   const { product_id } = req.body;
 
@@ -557,8 +558,15 @@ app.post("/track-bundle-visit", async (req, res) => {
     const existingMetafield = metafields.find(m => m.key === VISITOR_KEY);
     
     // 2. INCREMENT: Calculate the new count
-    const metafieldId = existingMetafield ? existingMetafield.id : null;
-    let visitorCount = existingMetafield ? parseInt(existingMetafield.value) : 0;
+    // The ID might be a GID (for the fetch) but we need the numeric part for the update URL
+    let numericMetafieldId = null;
+    let visitorCount = 0;
+    
+    if (existingMetafield) {
+        // Extract the numeric ID from the GID (e.g., "gid://shopify/Metafield/12345" -> "12345")
+        numericMetafieldId = existingMetafield.id.split('/').pop();
+        visitorCount = parseInt(existingMetafield.value);
+    }
     
     // Crucial: Increment the count
     visitorCount += 1; 
@@ -574,11 +582,12 @@ app.post("/track-bundle-visit", async (req, res) => {
       }
     };
 
-    if (metafieldId) {
-      // 4A. UPDATE (PUT): If we have an ID, we UPDATE the existing metafield
-      const updateUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/metafields/${metafieldId.split('/').pop()}.json`;
-      // Pass the numeric ID in the body for the PUT request (REST API requirement)
-      metafieldData.metafield.id = metafieldId.split('/').pop(); 
+    if (numericMetafieldId) {
+      // 4A. UPDATE (PUT): If we have a numeric ID, we UPDATE the existing metafield
+      const updateUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/metafields/${numericMetafieldId}.json`;
+      
+      // The body must also include the ID
+      metafieldData.metafield.id = numericMetafieldId; 
       await shopifyApiCall("put", updateUrl, metafieldData);
     } else {
       // 4B. CREATE (POST): If no ID is found, we CREATE a new metafield
