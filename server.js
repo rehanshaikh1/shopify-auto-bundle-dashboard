@@ -3,9 +3,31 @@ import axios from "axios";
 import dotenv from "dotenv";
 import bodyParser from "body-parser";
 import Bottleneck from "bottleneck";
+import cors from "cors"; // 💡 NEW: Import the CORS package
 
 dotenv.config();
 const app = express();
+
+
+// --- CORS Configuration ---
+const allowedOrigins = ['https://velonia.si']; // 💡 ADD YOUR SHOPIFY DOMAIN HERE
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl) or if the origin is in our list
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: 'GET,POST,PUT,DELETE', // Allow the necessary methods (especially POST for tracking)
+  allowedHeaders: 'Content-Type,Authorization',
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+
 
 // Configure Bottleneck for rate limiting (2 requests per second)
 const limiter = new Bottleneck({
@@ -99,6 +121,7 @@ async function shopifyGraphQLCall(query, variables = {}) {
 }
 
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json()); // <--- 💡 PASTE THIS LINE
 app.use(express.static("public"));
 app.set("view engine", "ejs");
 app.use((req, res, next) => {
@@ -162,12 +185,40 @@ const PRODUCT_VARIANTS_BULK_CREATE_MUTATION = `
 `;
 
 
+// --- GraphQL Queries for Reporting ---
+const BUNDLE_VARIANT_SALES_QUERY = (variantIds) => `
+  query GetVariantSales {
+    orders(query: "line_item_variant_ids:${variantIds.join(' OR ')}", first: 250) {
+      edges {
+        node {
+          lineItems(first: 250) {
+            edges {
+              node {
+                variant {
+                  id
+                }
+                quantity
+              }
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`;
+
 // --- Fetching Logic ---
 // --- Existing Product Fetching Logic (Updated to return mapped products) ---
+// Replace your entire async function fetchProductsAndBundles() with this:
 async function fetchProductsAndBundles() {
     let products = [];
-    let allUniqueTags = new Set(); // 💡 NEW: Set to store all unique tags
+    let allUniqueTags = new Set(); 
     let cursor = null;
+    let allBundleVariantGids = []; // 💡 NEW: Collect all GIDs for sales query
 
     const query = `
         query fetchProducts($first: Int!, $after: String) {
@@ -177,6 +228,9 @@ async function fetchProductsAndBundles() {
                         id
                         title
                         tags
+                          metafield(namespace: "bundle", key: "visitors") { 
+                            value
+                        }
                         options {
                             id
                             name
@@ -246,12 +300,13 @@ async function fetchProductsAndBundles() {
                 const mappedProduct = {
                     id: product.id.split('/').pop(),
                     title: product.title,
+                    // 💡 ADDED: Capture the metafield value from the product object
+                    visitors: product.metafield ? parseInt(product.metafield.value) : 0, 
                     variants: product.variants?.edges?.map(e => e.node) || [],
                     options: product.options,
                     tags: product.tags
                 };
                 
-                // 💡 NEW: Collect all tags into the Set
                 (product.tags || []).forEach(tag => allUniqueTags.add(tag.trim().toLowerCase()));
 
                 return mappedProduct;
@@ -277,6 +332,8 @@ async function fetchProductsAndBundles() {
 
                 const hasNonBundleOptions = product.options.some(opt => opt.name !== "Bundle" && opt.name !== "Title");
 
+                // Note: filteredProducts already have the 'visitors' property, but it's not used in this section.
+
                 return baseInventory > 3 && !hasBundleVariants && !hasNonBundleOptions;
             })
             .sort((a, b) => a.title.localeCompare(b.title));
@@ -292,25 +349,48 @@ async function fetchProductsAndBundles() {
             )
             .map(product => {
                 let bundles = [];
+                // 💡 ACCESSING THE 'visitors' PROPERTY FROM MAPPED PRODUCT
+                const visitorCount = product.visitors; 
+                
                 (product.variants || []).forEach(variant => { 
                     const option1 = variant.selectedOptions.find(opt => opt.name === "Bundle")?.value;
                     if (["1x", "2x", "3x"].includes(option1)) {
                         const available = variant.inventoryItem.inventoryLevels.edges[0]?.node.quantities.find(q => q.name === "available")?.quantity || 0;
+                        
+                        allBundleVariantGids.push(variant.id); // 💡 COLLECT GID
+
                         bundles.push({
                             type: option1,
                             variantId: variant.id.split('/').pop(),
+                            variantGid: variant.id, // 💡 STORE GID
                             price: parseFloat(variant.price).toFixed(2),
-                            available
+                            available,
+                            totalOrders: 0 // Initialize to 0
                         });
                     }
                 });
                 bundles.sort((a, b) => parseInt(a.type) - parseInt(b.type));
-                return bundles.length > 0 ? { id: product.id.split('/').pop(), title: product.title, bundles } : null;
+                return bundles.length > 0 ? { 
+                    id: product.id.split('/').pop(), 
+                    title: product.title, 
+                    bundles,
+                    // 💡 ATTACHING THE VISITOR COUNT HERE
+                    visitors: visitorCount 
+                } : null;
             })
             .filter(p => p !== null)
             .sort((a, b) => a.title.localeCompare(b.title));
+            
+        // 💡 NEW STEP: Fetch and map sales data
+        const salesMap = await fetchAndAggregateSales(allBundleVariantGids);
 
-        // 💡 UPDATED RETURN: Return products, bundles, AND all unique tags
+        bundledProducts.forEach(product => {
+            product.bundles.forEach(bundle => {
+                bundle.totalOrders = salesMap.get(bundle.variantGid) || 0;
+                delete bundle.variantGid; // Clean up the GID field before passing to EJS
+            });
+        });
+
         return { 
             filteredProducts, 
             bundledProducts,
@@ -321,13 +401,59 @@ async function fetchProductsAndBundles() {
         throw new Error(`Failed to fetch products: ${err.message}`);
     }
 }
-
 async function fetchData() {
     // Only one API call needed now
     return fetchProductsAndBundles(); 
 }
 
+// 💡 NEW HELPER FUNCTION
+async function fetchAndAggregateSales(variantGids) {
+    if (variantGids.length === 0) return new Map();
 
+    const salesMap = new Map();
+    let hasNextPage = true;
+    let cursor = null;
+
+    // Use a large loop/pagination if you expect more than 250 orders matching the filter
+    // For simplicity and to prevent hitting rate limits too hard, we limit the query.
+    // NOTE: Shopify's order query filter can only handle ~50 variant IDs in one OR clause.
+    // If you have many products, this logic needs to be enhanced with chunking.
+    const CHUNK_SIZE = 50; 
+    const chunks = [];
+    for (let i = 0; i < variantGids.length; i += CHUNK_SIZE) {
+        chunks.push(variantGids.slice(i, i + CHUNK_SIZE));
+    }
+    
+    // Process chunks sequentially to manage query complexity
+    for (const chunk of chunks) {
+        let chunkCursor = null;
+        let chunkHasNextPage = true;
+
+        while (chunkHasNextPage) {
+            const query = BUNDLE_VARIANT_SALES_QUERY(chunk);
+            const data = await shopifyGraphQLCall(query, { after: chunkCursor });
+            
+            const orders = data?.orders?.edges || [];
+            
+            orders.forEach(orderEdge => {
+                orderEdge.node.lineItems.edges.forEach(lineItemEdge => {
+                    const variantId = lineItemEdge.node.variant?.id;
+                    const quantity = lineItemEdge.node.quantity;
+                    
+                    if (variantId && chunk.includes(variantId)) {
+                        // Aggregate quantities for accurate purchase count
+                        salesMap.set(variantId, (salesMap.get(variantId) || 0) + quantity);
+                    }
+                });
+            });
+
+            chunkCursor = data.orders.pageInfo.endCursor;
+            chunkHasNextPage = data.orders.pageInfo.hasNextPage;
+        }
+    }
+
+    return salesMap;
+}
 async function fetchBundleMappings() {
   let mappings = [];
   let cursor = null;
@@ -403,6 +529,60 @@ async function fetchBundleMappings() {
     throw new Error(`Failed to fetch bundle mappings: ${err.message}`);
   }
 }
+// ... (existing code before app.get("/") route)
+
+// --- Metafield Constants (Ensure these match your created metafield) ---
+const VISITOR_NAMESPACE = "bundle";
+const VISITOR_KEY = "visitors";
+const VISITOR_TYPE = "integer"; 
+
+// 💡 NEW: Endpoint to track visitors and increment the metafield
+app.post("/track-bundle-visit", async (req, res) => {
+  const LOCAL_API_VERSION = "2025-01"; 
+  const { product_id } = req.body;
+
+  if (!product_id) {
+    return res.status(400).json({ success: false, message: "Product ID required." });
+  }
+
+  try {
+    // 1. Fetch existing metafield 
+    const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=${VISITOR_NAMESPACE}&key=${VISITOR_KEY}`;
+    const fetchResponse = await shopifyApiCall("get", queryUrl);
+    const existingMetafield = fetchResponse.metafields.find(m => m.key === VISITOR_KEY);
+    
+    let visitorCount = existingMetafield ? parseInt(existingMetafield.value) : 0;
+    visitorCount += 1; // Increment the count
+
+    const metafieldData = {
+      metafield: {
+        namespace: VISITOR_NAMESPACE,
+        key: VISITOR_KEY,
+        value: visitorCount.toString(), // REST API requires the value as a string
+        type: VISITOR_TYPE,
+        owner_resource: "product",
+      }
+    };
+
+    if (existingMetafield) {
+      // 2. Update existing metafield
+      const updateUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/metafields/${existingMetafield.id}.json`;
+      await shopifyApiCall("put", updateUrl, metafieldData);
+    } else {
+      // 3. Create new metafield
+      const createUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json`;
+      await shopifyApiCall("post", createUrl, metafieldData);
+    }
+    
+    console.log(`✅ Visitor count updated for product ${product_id} to ${visitorCount}`);
+    res.json({ success: true, count: visitorCount });
+
+  } catch (error) {
+    console.error(`Error tracking bundle visit for ${product_id}:`, error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // --- Express Routes ---
 app.get("/", async (req, res) => {
     try {
@@ -856,121 +1036,6 @@ app.post("/update-bundles", async (req, res) => {
   res.redirect(`/?message=${encodeURIComponent(message)}#update-bundles`);
 });
 
-
-
-// Delete Bundle
-
-
-// --- Express Routes (Add this new route) ---
-
-app.post("/delete-bundles", async (req, res) => {
-    // Note: The global `shopifyApiCall` helper is configured with rate limiting,
-    // which is better than defining a new local one without it. We'll use the global one.
-    // The global `shopifyApiCall` uses the latest global API_VERSION ("2025-10").
-    const { product_id } = req.body;
-
-    if (!product_id) {
-        return res.redirect(`/?message=${encodeURIComponent("❌ Error: Product ID is required for deletion.")}#update-bundles`);
-    }
-
-    try {
-        // Step 1: Fetch the product variants and options via REST API
-        const productUrl = `https://${SHOP}/admin/api/${API_VERSION}/products/${product_id}.json`;
-        const productData = await shopifyApiCall("get", productUrl);
-        const product = productData.product;
-
-        if (!product || !product.variants) {
-            return res.redirect(`/?message=${encodeURIComponent(`❌ Error: Product ${product_id} not found or has no variants.`)}#update-bundles`);
-        }
-
-        const variants = product.variants;
-        const bundleVariantsToDelete = variants.filter((v) => {
-            // Identify variants where one of the options is a bundle size
-            const isBundleVariant = v.option1 === "1x" || v.option1 === "2x" || v.option1 === "3x" || 
-                                    v.option2 === "1x" || v.option2 === "2x" || v.option2 === "3x" || 
-                                    v.option3 === "1x" || v.option3 === "2x" || v.option3 === "3x";
-            return isBundleVariant;
-        });
-
-        if (bundleVariantsToDelete.length === 0) {
-            return res.redirect(`/?message=${encodeURIComponent(`⚠️ Warning: No bundle variants (1x, 2x, 3x) found for product ${product_id}.`)}#update-bundles`);
-        }
-
-        let deletionCount = 0;
-        
-        // Step 2: Delete bundle variants one by one (using the rate-limited global helper)
-        for (const variant of bundleVariantsToDelete) {
-            const variantUrl = `https://${SHOP}/admin/api/${API_VERSION}/products/${product_id}/variants/${variant.id}.json`;
-            try {
-                await shopifyApiCall("delete", variantUrl);
-                deletionCount++;
-            } catch (err) {
-                console.warn(`Could not delete variant ${variant.id} for product ${product_id}: ${err.message}`);
-            }
-        }
-        
-        // Step 3: Remove the 'Bundle' option and ensure a base option remains
-        const remainingOptions = product.options.filter(opt => opt.name.toLowerCase() !== 'bundle');
-        
-        let newOptions = remainingOptions;
-
-        // If no options remain after removing 'Bundle', or if only the 'Bundle' option existed,
-        // we must restore the default Shopify "Title" option to save the product.
-        if (newOptions.length === 0 || (newOptions.length === 1 && newOptions[0].name.toLowerCase() === 'bundle')) {
-             newOptions = [{ name: "Title", values: ["Default Title"] }];
-        }
-        
-        // If all variants were deleted, but a "Default Title" option remains, 
-        // we must explicitly create a default variant since Shopify mandates at least one variant.
-        const remainingVariants = variants.filter(v => !bundleVariantsToDelete.some(dv => dv.id === v.id));
-
-        if (remainingVariants.length === 0 && newOptions.length > 0) {
-            const createVariantUrl = `https://${SHOP}/admin/api/${API_VERSION}/products/${product_id}/variants.json`;
-            // Check if "Default Title" is the only option and value
-            const defaultTitleOption = newOptions.find(opt => opt.name === "Title" && opt.values.includes("Default Title"));
-
-            if (defaultTitleOption) {
-                 await shopifyApiCall("post", createVariantUrl, { 
-                    variant: { option1: "Default Title" } 
-                 });
-                 console.log(`Restored 'Default Title' variant for product ${product_id}`);
-            }
-        }
-
-
-        // Update product with new options array
-        await shopifyApiCall("put", productUrl, {
-            product: { id: product_id, options: newOptions },
-        });
-
-        // Step 4: Remove the 'bundle.extra_text' metafield
-        try {
-             // Fetch existing metafields to find the ID
-            const metafieldsUrl = `https://${SHOP}/admin/api/${API_VERSION}/products/${product_id}/metafields.json`;
-            const metafieldsResponse = await shopifyApiCall("get", metafieldsUrl);
-            const metafields = metafieldsResponse.metafields || [];
-            const bundleMetafield = metafields.find(m => m.namespace === "bundle" && m.key === "extra_text");
-            
-            if (bundleMetafield) {
-                 const deleteMetafieldUrl = `https://${SHOP}/admin/api/${API_VERSION}/metafields/${bundleMetafield.id}.json`;
-                 await shopifyApiCall("delete", deleteMetafieldUrl);
-                 console.log(`📝 Deleted metafield 'bundle.extra_text' for product ${product_id}`);
-            }
-
-        } catch (err) {
-             console.warn(`⚠️ Failed to delete metafield for ${product_id}: ${err.message}`);
-        }
-
-        const finalMessage = `✅ Deleted ${deletionCount} bundle variants and removed the 'Bundle' option for product ${product.title} (${product_id}).`;
-        res.redirect(`/?message=${encodeURIComponent(finalMessage)}`);
-
-    } catch (err) {
-        console.error(`❌ Error deleting bundles for product ${product_id}:`, err.message);
-        res.redirect(`/?message=${encodeURIComponent(`❌ Error deleting bundles for product ${product_id}: ${err.message}`)}`);
-    }
-});
-
-
 // Sync bundle inventory route (manual)
 app.post("/sync-bundle-inventory", async (req, res) => {
   const { product_id, variant_ids } = req.body;
@@ -1101,6 +1166,96 @@ app.post("/sync-bundle-inventory", async (req, res) => {
     res.redirect(`/?message=${encodeURIComponent(`❌ Error syncing inventory: ${err.message}`)}`);
   }
 });
+
+// ... (existing code up to app.post("/delete-bundles", ...) )
+
+app.post("/delete-bundles", async (req, res) => {
+  const LOCAL_API_VERSION = "2025-01"; 
+  const { product_id } = req.body;
+
+  if (!product_id) {
+    return res.redirect(
+      `/?message=${encodeURIComponent("❌ Error: Product ID is required for deletion.")}#existing-bundles`
+    );
+  }
+
+  try {
+    // 1. Fetch all product variants using GraphQL for reliability
+    const productGid = `gid://shopify/Product/${product_id}`;
+    const productQuery = `
+      query getProductVariants($id: ID!) {
+        product(id: $id) {
+          variants(first: 20) { 
+            edges { 
+              node { 
+                id 
+                selectedOptions { name value }
+              } 
+            } 
+          }
+        }
+      }
+    `;
+
+    const data = await shopifyGraphQLCall(productQuery, { id: productGid });
+    const variants = data?.product?.variants?.edges.map(e => e.node) || [];
+    
+    if (variants.length === 0) {
+        throw new Error("GraphQL returned no variants for this product ID.");
+    }
+
+    // 2. Identify and delete bundle variants (1x, 2x, 3x) using REST
+    const bundleVariantsToDelete = variants.filter(v => {
+        const bundleOption = v.selectedOptions.find(o => o.name === "Bundle");
+        return bundleOption && ["1x", "2x", "3x"].includes(bundleOption.value);
+    });
+
+    if (bundleVariantsToDelete.length === 0) {
+        console.warn(`Product ${product_id}: No 1x/2x/3x bundle variants found to delete.`);
+    }
+
+    let deletedCount = 0;
+    for (const variant of bundleVariantsToDelete) {
+        // Extract numeric ID from GraphQL GID (e.g., "gid://shopify/ProductVariant/123456789")
+        const variantIdNum = variant.id.split("/").pop(); 
+        const variantDeleteUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/variants/${variantIdNum}.json`;
+        
+        try {
+            // Use the REST API delete call
+            await shopifyApiCall("delete", variantDeleteUrl);
+            deletedCount++;
+        } catch (err) {
+            console.warn(`⚠️ Failed to delete variant ${variantIdNum} for ${product_id}: ${err.message}`);
+        }
+    }
+    
+    // 3. Update product options to remove 'Bundle' and reset to 'Title'
+    const productUpdateUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}.json`;
+    
+    const updateData = {
+        product: { 
+            id: product_id, 
+            // Setting options to just [{ name: "Title" }] forces Shopify to revert to a 
+            // single-variant product structure if it was a simple product originally.
+            options: [{ name: "Title" }] 
+        },
+    };
+    // Use the REST API put call
+    await shopifyApiCall("put", productUpdateUrl, updateData);
+
+    const message = `✅ Successfully deleted ${deletedCount} bundle variants and reverted options for product ${product_id}.`;
+    console.log(message);
+    res.redirect(`/?message=${encodeURIComponent(message)}#existing-bundles`);
+
+  } catch (err) {
+    console.error(`❌ Error deleting bundles for product ${product_id}:`, err.message);
+    res.redirect(
+      `/?message=${encodeURIComponent(`❌ Error deleting bundles for product ${product_id}: ${err.message}`)}#existing-bundles`
+    );
+  }
+});
+
+// ... (existing code continues from here)
 
 // Start the server
 const PORT = process.env.PORT || 3000;
