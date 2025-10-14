@@ -630,13 +630,13 @@
               <strong><%= product.visitors %></strong>
             </td>
             
-            <td style="display:none">
+            <td>
   <% product.bundles.forEach((bundle, index) => { %>
     <%= bundle.type.charAt(0) %>x: <strong><%= bundle.totalOrders %></strong><% if (index < product.bundles.length - 1) { %> | <% } %>
   <% }); %>
 </td>
               
-              <td><%= product.bundles.map(b => b.type).join(", ") %></td>
+              <td style="display:none"><%= product.bundles.map(b => b.type).join(", ") %></td>
              <td style="display: flex; gap: 10px; align-items: center;">
                 <a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" 
                    class="manage-button"
