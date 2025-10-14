@@ -540,7 +540,6 @@ const VISITOR_TYPE = "number_integer";
 
 // 💡 NEW: Endpoint to track visitors and increment the metafield
 app.post("/track-bundle-visit", async (req, res) => {
-  // Use a local API version for consistency with REST calls
   const LOCAL_API_VERSION = "2025-01"; 
   const { product_id } = req.body;
 
@@ -549,29 +548,33 @@ app.post("/track-bundle-visit", async (req, res) => {
   }
 
   try {
-    // 1. FETCH: Retrieve the existing metafield to get its ID and current value
+    // 1. FETCH: Retrieve the existing metafield (search by namespace and key)
     const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=${VISITOR_NAMESPACE}&key=${VISITOR_KEY}`;
+    
+    // Use an un-limited GET here to avoid deadlocking with the Bottleneck queue, 
+    // although using limitedAxiosGet is generally safer if defined. 
+    // We will use shopifyApiCall (which is limited) for consistency.
     const fetchResponse = await shopifyApiCall("get", queryUrl);
 
-    // Safely check for the metafield array
+    // 2. RETRIEVE DATA: Safely extract the ID and current value
     const metafields = fetchResponse?.metafields || []; 
-    const existingMetafield = metafields.find(m => m.key === VISITOR_KEY);
-    
-    // 2. INCREMENT: Calculate the new count
-    // The ID might be a GID (for the fetch) but we need the numeric part for the update URL
+    // If the query is successful, the result array (index 0) is the one we want.
+    const existingMetafield = metafields[0]; 
+
     let numericMetafieldId = null;
     let visitorCount = 0;
     
-    if (existingMetafield) {
-        // Extract the numeric ID from the GID (e.g., "gid://shopify/Metafield/12345" -> "12345")
+    if (existingMetafield && existingMetafield.value) {
+        // Extract the numeric ID from the GID
         numericMetafieldId = existingMetafield.id.split('/').pop();
-        visitorCount = parseInt(existingMetafield.value);
+        // Parse the existing value string from Shopify
+        visitorCount = parseInt(existingMetafield.value); 
     }
     
-    // Crucial: Increment the count
+    // 3. INCREMENT: Calculate the new count
     visitorCount += 1; 
 
-    // 3. PREPARE DATA: The data structure for POST/PUT
+    // 4. PREPARE DATA: The data structure for POST/PUT
     const metafieldData = {
       metafield: {
         namespace: VISITOR_NAMESPACE,
@@ -583,14 +586,14 @@ app.post("/track-bundle-visit", async (req, res) => {
     };
 
     if (numericMetafieldId) {
-      // 4A. UPDATE (PUT): If we have a numeric ID, we UPDATE the existing metafield
+      // 5A. UPDATE (PUT): If we have a numeric ID, we UPDATE the existing metafield
       const updateUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/metafields/${numericMetafieldId}.json`;
       
-      // The body must also include the ID
+      // The body must also include the ID for REST API PUT requests
       metafieldData.metafield.id = numericMetafieldId; 
       await shopifyApiCall("put", updateUrl, metafieldData);
     } else {
-      // 4B. CREATE (POST): If no ID is found, we CREATE a new metafield
+      // 5B. CREATE (POST): Runs only on the very first visit
       const createUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json`;
       await shopifyApiCall("post", createUrl, metafieldData);
     }
@@ -600,6 +603,7 @@ app.post("/track-bundle-visit", async (req, res) => {
 
   } catch (error) {
     console.error(`Error tracking bundle visit for ${product_id}: ${error.message}`);
+    // Respond with 500 status to client
     res.status(500).json({ success: false, message: error.message });
   }
 });
