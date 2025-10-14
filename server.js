@@ -548,26 +548,32 @@ app.post("/track-bundle-visit", async (req, res) => {
   }
 
   try {
-    // 1. FETCH: Retrieve the existing metafield (search by namespace and key)
+    // 1. FETCH: Retrieve the existing metafield
     const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=${VISITOR_NAMESPACE}&key=${VISITOR_KEY}`;
     const fetchResponse = await shopifyApiCall("get", queryUrl);
 
-    // Safely retrieve the first metafield object.
+    // 2. INITIALIZE/RETRIEVE COUNT
     const metafields = fetchResponse?.metafields || []; 
     const existingMetafield = metafields[0]; 
 
-    // 2. INITIALIZE/RETRIEVE COUNT
     let numericMetafieldId = null;
-    let previousCount = 0;
-    
+    let previousCount = 0; // Initialize to 0 for a safe starting point (first visit)
+
+    // Check if the metafield was found
     if (existingMetafield && existingMetafield.value) {
-        // Extract the numeric ID from the GID (e.g., "gid://shopify/Metafield/12345" -> "12345")
+        // Extract the numeric ID
         numericMetafieldId = existingMetafield.id.split('/').pop();
-        // Parse the existing value string from Shopify
-        previousCount = parseInt(existingMetafield.value); 
+        
+        // Safely parse the value from the API response
+        const fetchedValue = parseInt(existingMetafield.value, 10);
+        
+        // 💡 ONLY update previousCount if the parsed value is a valid number (not NaN)
+        if (!isNaN(fetchedValue)) {
+            previousCount = fetchedValue;
+        }
     }
     
-    // 3. INCREMENT
+    // 3. INCREMENT (This is the core logic you requested)
     const newCount = previousCount + 1; 
 
     // 4. PREPARE DATA
@@ -575,21 +581,19 @@ app.post("/track-bundle-visit", async (req, res) => {
       metafield: {
         namespace: VISITOR_NAMESPACE,
         key: VISITOR_KEY,
-        value: newCount.toString(), // Must be sent as a string
+        value: newCount.toString(), // Send the new count as a string
         type: VISITOR_TYPE, 
         owner_resource: "product",
       }
     };
 
     if (numericMetafieldId) {
-      // 5A. UPDATE (PUT): If we have a numeric ID, we UPDATE the existing metafield
+      // 5A. UPDATE (PUT): If we have the ID, update the existing metafield
       const updateUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/metafields/${numericMetafieldId}.json`;
-      
-      // CRITICAL: The body must include the numeric ID for the PUT request
       metafieldData.metafield.id = numericMetafieldId; 
       await shopifyApiCall("put", updateUrl, metafieldData);
     } else {
-      // 5B. CREATE (POST): Runs only on the very first visit
+      // 5B. CREATE (POST): Only runs on the very first visit
       const createUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json`;
       await shopifyApiCall("post", createUrl, metafieldData);
     }
@@ -599,7 +603,6 @@ app.post("/track-bundle-visit", async (req, res) => {
 
   } catch (error) {
     console.error(`Error tracking bundle visit for ${product_id}: ${error.message}`);
-    // Respond with 500 status to client
     res.status(500).json({ success: false, message: error.message });
   }
 });
