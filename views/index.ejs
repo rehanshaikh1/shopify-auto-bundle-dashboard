@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Product Bundle Dashboard</title>
-  
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <style>
     :root {
       --p-color-bg-default: #ffffff;
@@ -616,8 +616,8 @@
         <thead>
           <tr>
             <th>Product Title (ID)</th>
-            <th>Visitors</th> <th>Purchases</th> 
-            <th style="display:none">Bundles Created</th>
+            <th>Analytics</th> 
+            <th>Bundles Created</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -626,23 +626,40 @@
             <tr>
               <td><%= product.title %> (<%= product.id %>)</td>
               
-            <td> 
-              <strong><%= product.visitors %></strong>
-            </td>
-            
-            <td>
+         <td> 
+  <i class="fa-solid fa-users-rectangle"></i> 
+  <strong><%= product.visitors %></strong> |
+
   <% product.bundles.forEach((bundle, index) => { %>
-    <%= bundle.type.charAt(0) %>x: <strong><%= bundle.totalOrders %></strong><% if (index < product.bundles.length - 1) { %> | <% } %>
+    <%= bundle.type.charAt(0) %>x: 
+    <strong><%= bundle.totalOrders %></strong>
+    <% if (index < product.bundles.length - 1) { %> | <% } %>
   <% }); %>
+
+  <% 
+    // Calculate total sold and conversion %
+    let totalVisitors = product.visitors || 0;
+    let totalSold = product.bundles.reduce((sum, b) => sum + (b.totalOrders || 0), 0);
+    let conversionRate = totalVisitors > 0 ? (totalSold / totalVisitors) * 100 : 0;
+
+    // Remove trailing .0 if it’s a whole number
+    conversionRate = Number.isInteger(conversionRate) ? conversionRate : conversionRate.toFixed(1);
+  %>
+
+  | → <strong><%= conversionRate %>%</strong>
 </td>
+
+
+            
+          
               
-              <td style="display:none"><%= product.bundles.map(b => b.type).join(", ") %></td>
+              <td><%= product.bundles.map(b => b.type).join(", ") %></td>
              <td style="display: flex; gap: 10px; align-items: center;">
                 <a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" 
                    class="manage-button"
                    onclick="window.open(this.href, '_blank'); return false;"
                    style="margin-right: auto;">
-                  Manage Variants
+                  Manage
                 </a>
                 
                 <form action="/delete-bundles" method="POST" onsubmit="return confirm('Are you sure you want to DELETE ALL BUNDLE VARIANTS for <%= product.title %>? This action cannot be undone.');">
