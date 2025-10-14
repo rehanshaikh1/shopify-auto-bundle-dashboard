@@ -627,7 +627,7 @@
               <td><%= product.bundles.map(b => b.type).join(", ") %></td>
               <td>
 <a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" 
-   class="manage-button"
+   class="manage-button" style="dispay:none;"
    onclick="window.open(this.href, '_blank'); return false;">
   Manage Variants
 </a>
