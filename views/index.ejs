@@ -626,14 +626,19 @@
               <td><%= product.title %> (<%= product.id %>)</td>
               <td><%= product.bundles.map(b => b.type).join(", ") %></td>
               <td>
-<a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" 
-   class="manage-button"
-   onclick="window.open(this.href, '_blank'); return false;">
-  Manage Variants
-</a>
-
-
-              </td>
+                <a href="https://<%= shopDomain %>/admin/products/<%= product.id %>#variants-section" 
+                   class="manage-button"
+                   onclick="window.open(this.href, '_blank'); return false;">
+                   Manage Variants
+                </a>
+                
+                <form action="/delete-bundles" method="POST" style="display: inline; margin-left: 15px;" onsubmit="showLoadingOverlay(); return confirm('Are you sure you want to permanently delete ALL bundle variants (1x, 2x, 3x) and the Bundle option for <%= product.title %>?');">
+                    <input type="hidden" name="product_id" value="<%= product.id %>">
+                    <button type="submit" class="manage-button" style="color: #d9534f; border: none; background: none; cursor: pointer; padding: 0;">
+                        Delete Bundle
+                    </button>
+                </form>
+              </td>
             </tr>
           <% }) %>
         </tbody>
