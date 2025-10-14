@@ -539,6 +539,7 @@ const VISITOR_KEY = "visitors";
 const VISITOR_TYPE = "number_integer"; 
 
 // 💡 NEW: Endpoint to track visitors and increment the metafield
+// 💡 FINAL FUNCTION: Enhanced logging to show (Previous Count -> New Count)
 app.post("/track-bundle-visit", async (req, res) => {
   const LOCAL_API_VERSION = "2025-01"; 
   const { product_id } = req.body;
@@ -552,13 +553,14 @@ app.post("/track-bundle-visit", async (req, res) => {
     const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=${VISITOR_NAMESPACE}&key=${VISITOR_KEY}`;
     const fetchResponse = await shopifyApiCall("get", queryUrl);
 
-    // 2. INITIALIZE & RETRIEVE COUNT
+    // 2. INITIALIZE/RETRIEVE COUNT
     const metafields = fetchResponse?.metafields || []; 
     const existingMetafield = metafields[0]; 
 
     let numericMetafieldId = null;
-    let previousCount = 0; // 💡 Retained for necessary safe initialization
-
+    let oldCount = 0; // 💡 Renamed to oldCount
+    
+    // Check if metafield was found and safely extract its ID and value
     if (existingMetafield && existingMetafield.value) {
         numericMetafieldId = existingMetafield.id.split('/').pop();
         
@@ -566,12 +568,12 @@ app.post("/track-bundle-visit", async (req, res) => {
         
         // Use fetched value if it's a valid number
         if (!isNaN(fetchedValue)) {
-            previousCount = fetchedValue;
+            oldCount = fetchedValue; // 💡 Store the retrieved value here
         }
     }
     
     // 3. INCREMENT
-    const newCount = previousCount + 1; // Correctly relies on previousCount (which is 0 or the fetched value)
+    const newCount = oldCount + 1; // Calculation uses the stored oldCount
 
     // 4. PREPARE DATA
     const metafieldData = {
@@ -595,12 +597,12 @@ app.post("/track-bundle-visit", async (req, res) => {
       await shopifyApiCall("post", createUrl, metafieldData);
     }
     
-    // 6. LOGGING (Displays the resulting new count)
-    console.log(`✅ Visitor count updated for product ${product_id} to ${newCount}`);
+    // 6. LOGGING (Displays the transition)
+    console.log(`✅ Visitor count updated for product ${product_id}: ${oldCount} → ${newCount}`);
     res.json({ success: true, count: newCount });
 
   } catch (error) {
-    console.error(`Error tracking bundle visit for ${product_id}: ${error.message}`);
+    console.error(`Error tracking bundle visit for product ${product_id}: ${error.message}`);
     res.status(500).json({ success: false, message: error.message });
   }
 });
