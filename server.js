@@ -10,8 +10,10 @@ const app = express();
 
 
 // --- CORS Configuration ---
-const allowedOrigins = ['https://velonia.si']; // 💡 ADD YOUR SHOPIFY DOMAIN HERE
-
+const allowedOrigins = [
+  'https://velonia.si',                       // Your primary custom domain
+  'https://s0jd0m-rg.myshopify.com',           // 💡 PASTE THIS DOMAIN
+]; 
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl) or if the origin is in our list
@@ -546,16 +548,40 @@ app.post("/track-bundle-visit", async (req, res) => {
   }
 
   try {
-    // 1. Fetch existing metafield (This is the most likely point of failure)
-    const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=bundle&key=visitors`;
-    const fetchResponse = await shopifyApiCall("get", queryUrl); // <-- Check this API call in logs
-    // ... (rest of the logic) ...
+    // 1. Fetch existing metafield 
+    const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=${VISITOR_NAMESPACE}&key=${VISITOR_KEY}`;
+    const fetchResponse = await shopifyApiCall("get", queryUrl);
+    const existingMetafield = fetchResponse.metafields.find(m => m.key === VISITOR_KEY);
     
-    // ...
+    let visitorCount = existingMetafield ? parseInt(existingMetafield.value) : 0;
+    visitorCount += 1; // Increment the count
+
+    const metafieldData = {
+      metafield: {
+        namespace: VISITOR_NAMESPACE,
+        key: VISITOR_KEY,
+        value: visitorCount.toString(), // REST API requires the value as a string
+        type: VISITOR_TYPE,
+        owner_resource: "product",
+      }
+    };
+
+    if (existingMetafield) {
+      // 2. Update existing metafield
+      const updateUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/metafields/${existingMetafield.id}.json`;
+      await shopifyApiCall("put", updateUrl, metafieldData);
+    } else {
+      // 3. Create new metafield
+      const createUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json`;
+      await shopifyApiCall("post", createUrl, metafieldData);
+    }
+    
+    console.log(`✅ Visitor count updated for product ${product_id} to ${visitorCount}`);
+    res.json({ success: true, count: visitorCount });
+
   } catch (error) {
-    // CRUCIAL: Ensure the catch block sends a response to prevent a crash
     console.error(`Error tracking bundle visit for ${product_id}:`, error.message);
-    res.status(500).json({ success: false, message: error.message }); // This sends the 500 status
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
