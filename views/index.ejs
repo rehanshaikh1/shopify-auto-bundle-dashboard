@@ -605,76 +605,196 @@
       </form>
     </div>
   </div>
-  <div class="card">
+  <div class="card" id="analytics-controls-card">
+    <div class="card-header">
+        <h2>Analytics Filters</h2>
+    </div>
+    <div class="form-group" style="gap: 15px; margin-bottom: 0;">
+        
+        <div class="input-field" style="flex-basis: 240px; flex-grow: 0;">
+            <label for="analytics_tag_filter">Filter by Tag (Country/Market):</label>
+            <select id="analytics_tag_filter" onchange="applyAnalyticsFilterAndSort()"
+                    style="padding: 8px 12px; border: 1px solid var(--p-color-border-default); border-radius: 4px; box-sizing: border-box; width: 100%;">
+                <option value="ALL">All Tags</option>
+                <% marketCollections.forEach(tagObj => { %>
+                    <option value="<%= tagObj.tag %>">
+                        <%= tagObj.title %>
+                    </option>
+                <% }); %>
+            </select>
+        </div>
+
+        <div class="input-field" style="flex-basis: 180px; flex-grow: 0; margin-left:auto;">
+            <label for="analytics_sort_by">Sort By:</label>
+            <select id="analytics_sort_by" onchange="applyAnalyticsFilterAndSort()"
+                    style="padding: 8px 12px; border: 1px solid var(--p-color-border-default); border-radius: 4px; box-sizing: border-box; width: 100%;">
+                <option value="title">Product Title</option>
+                <option value="conversion_high">Performance (High to Low)</option>
+                <option value="conversion_low">Performance (Low to High)</option>
+            </select>
+        </div>
+        </div>
+</div>
+<div class="card">
     <div class="card-header">
         <h2>Existing Bundles Summary</h2>
     </div>
     <% if (bundledProducts.length === 0) { %>
-      <p class="no-bundles">No bundles created for any products.</p>
+        <p class="no-bundles" id="analytics-no-results">No bundles created for any products.</p>
     <% } else { %>
-    <table>
-        <thead>
-          <tr>
-            <th>Product Title (ID)</th>
-            <th>Analytics</th> 
-            <th>Bundles Created</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          <% bundledProducts.forEach(product => { %>
-            <tr>
-              <td><%= product.title %> (<%= product.id %>)</td>
-              
-         <td> 
-  <i class="fa-solid fa-users-rectangle"></i> 
-  <strong><%= product.visitors %></strong> |
+        <p class="no-bundles" id="analytics-no-results" style="display: none;">No bundles match the current filters.</p>
+        <table>
+            <thead>
+              <tr>
+                <th>Product Title (ID)</th>
+                <th>Analytics</th> 
+                <th>Bundles Created</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="analytics-table-body">
+              <% bundledProducts.forEach(product => { 
+                // Calculate necessary values for data attributes
+                let totalVisitors = product.visitors || 0;
+                let totalSold = product.bundles.reduce((sum, b) => sum + (b.totalOrders || 0), 0);
+                let conversionRate = totalVisitors > 0 ? (totalSold / totalVisitors) * 100 : 0;
+                let formattedRate = Number.isInteger(conversionRate) ? conversionRate : conversionRate.toFixed(1);
+                let tagsString = product.tags ? product.tags.join(',') : '';
+              %>
+                <tr data-country-tag="<%= tagsString %>" data-conversion-rate="<%= conversionRate.toFixed(2) %>">
+                  <td>
+                    <%= product.title %> (<%= product.id %>)
+                    <br>
+                    <small style="color: var(--p-color-icon-default);">Tags: <%= product.tags ? product.tags.join(', ') : 'None' %></small>
+                  </td>
+             <td> 
+      <i class="fa-solid fa-users-rectangle"></i> 
+      <strong><%= product.visitors %></strong> |
 
-  <% product.bundles.forEach((bundle, index) => { %>
-    <%= bundle.type.charAt(0) %>x: 
-    <strong><%= bundle.totalOrders %></strong>
-    <% if (index < product.bundles.length - 1) { %> | <% } %>
-  <% }); %>
+      <% product.bundles.forEach((bundle, index) => { %>
+        <%= bundle.type.charAt(0) %>x: 
+        <strong><%= bundle.totalOrders %></strong>
+        <% if (index < product.bundles.length - 1) { %> | <% } %>
+      <% }); %>
 
-  <% 
-    // Calculate total sold and conversion %
-    let totalVisitors = product.visitors || 0;
-    let totalSold = product.bundles.reduce((sum, b) => sum + (b.totalOrders || 0), 0);
-    let conversionRate = totalVisitors > 0 ? (totalSold / totalVisitors) * 100 : 0;
-
-    // Remove trailing .0 if it’s a whole number
-    conversionRate = Number.isInteger(conversionRate) ? conversionRate : conversionRate.toFixed(1);
-  %>
-
-  | → <strong><%= conversionRate %>%</strong>
-</td>
+      | → <strong><%= formattedRate %>%</strong>
+    </td>
 
 
-            
-          
-              
-              <td><%= product.bundles.map(b => b.type).join(", ") %></td>
-             <td style="display: flex; gap: 10px; align-items: center;">
-                <a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" 
-                   class="manage-button"
-                   onclick="window.open(this.href, '_blank'); return false;"
-                   style="margin-right: auto;">
-                  Manage
-                </a>
                 
-                <form action="/delete-bundles" method="POST" onsubmit="return confirm('Are you sure you want to DELETE ALL BUNDLE VARIANTS for <%= product.title %>? This action cannot be undone.');">
-                    <input type="hidden" name="product_id" value="<%= product.id %>">
-                    <button type="submit" class="primary-button" style="background-color: #d9534f; border-color: #d9534f; padding: 6px 12px; margin-top: 0;">
-                        Delete
-                    </button>
-                </form>
-                </td>
-            </tr>
-          <% }) %>
-        </tbody>
-      </table>
+              
+                  
+                  <td><%= product.bundles.map(b => b.type).join(", ") %></td>
+                 <td style="display: flex; gap: 10px; align-items: center;">
+                    <a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" 
+                       class="manage-button"
+                       onclick="window.open(this.href, '_blank'); return false;"
+                       style="margin-right: auto;">
+                      Manage
+                    </a>
+                    
+                    <form action="/delete-bundles" method="POST" onsubmit="return confirm('Are you sure you want to DELETE ALL BUNDLE VARIANTS for <%= product.title %>? This action cannot be undone.');">
+                        <input type="hidden" name="product_id" value="<%= product.id %>">
+                        <button type="submit" class="primary-button" style="background-color: #d9534f; border-color: #d9534f; padding: 6px 12px; margin-top: 0;">
+                            Delete
+                        </button>
+                    </form>
+                    </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
     <% } %>
-  </div>
+</div>
+
+<script>
+// ----------------------------------------------------
+// DEDICATED SCRIPT BLOCK FOR ANALYTICS FILTERING/SORTING
+// ----------------------------------------------------
+
+/**
+ * Filters the table rows based on the selected tag and sorts them 
+ * based on the selected performance metric.
+ */
+function applyAnalyticsFilterAndSort() {
+    const tableBody = document.getElementById('analytics-table-body');
+    const table = tableBody ? tableBody.closest('table') : null;
+    const tagFilter = document.getElementById('analytics_tag_filter');
+    const sortFilter = document.getElementById('analytics_sort_by');
+    const noResultsMsg = document.getElementById('analytics-no-results');
+    
+    // Safety check for critical elements
+    if (!tableBody || !tagFilter || !sortFilter) return;
+
+    const selectedTag = tagFilter.value.trim();
+    const selectedTagLower = selectedTag.toLowerCase();
+    console.log(`Filtering by tag: ${selectedTag}, Sorting by: ${sortFilter.value}`);
+
+    const rows = Array.from(tableBody.querySelectorAll('tr'));
+    let visibleCount = 0;
+    
+    // --- 1. Filtering (Case-insensitive TAG LOGIC) ---
+    rows.forEach(row => {
+        const rowTagsString = row.getAttribute('data-country-tag');
+        const rowTagsArray = rowTagsString
+            ? rowTagsString.split(',').map(t => t.trim().toLowerCase())
+            : [];
+
+        const matchesTag = selectedTag === 'ALL' || rowTagsArray.includes(selectedTagLower);
+        
+        if (matchesTag) {
+            row.style.display = '';
+            visibleCount++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    // --- 2. Sorting (Only visible rows are sorted) ---
+    const visibleRows = rows.filter(row => row.style.display !== 'none');
+    const sortBy = sortFilter.value;
+    
+    if (sortBy === 'conversion_high' || sortBy === 'conversion_low') {
+        visibleRows.sort((a, b) => {
+            const rateA = parseFloat(a.getAttribute('data-conversion-rate')) || 0;
+            const rateB = parseFloat(b.getAttribute('data-conversion-rate')) || 0;
+            return sortBy === 'conversion_high' ? rateB - rateA : rateA - rateB;
+        });
+    } else if (sortBy === 'title') {
+        visibleRows.sort((a, b) => {
+            const titleA = a.querySelector('td:first-child').firstChild.textContent.trim().toLowerCase();
+            const titleB = b.querySelector('td:first-child').firstChild.textContent.trim().toLowerCase();
+            return titleA.localeCompare(titleB);
+        });
+    }
+
+    // --- 3. Re-append rows in sorted order ---
+    visibleRows.forEach(row => tableBody.appendChild(row));
+    
+    // --- 4. Display Status ---
+    if (visibleCount === 0) {
+        if (noResultsMsg) noResultsMsg.style.display = 'block';
+        if (table) table.style.display = 'none';
+    } else {
+        if (noResultsMsg) noResultsMsg.style.display = 'none';
+        if (table) table.style.display = 'table';
+    }
+}
+
+
+// --- INITIALIZATION ---
+document.addEventListener('DOMContentLoaded', () => {
+    // Attach listeners to the select elements
+    const sortSelect = document.getElementById('analytics_sort_by');
+    const tagSelect = document.getElementById('analytics_tag_filter');
+    
+    if (sortSelect) sortSelect.addEventListener('change', applyAnalyticsFilterAndSort);
+    if (tagSelect) tagSelect.addEventListener('change', applyAnalyticsFilterAndSort);
+
+    // Run the filter/sort logic on initial load to apply default order (Title A-Z)
+    applyAnalyticsFilterAndSort(); 
+});
+</script>
 <script>
     // --- Global State & Initialization ---
     let messageTimeout; 
