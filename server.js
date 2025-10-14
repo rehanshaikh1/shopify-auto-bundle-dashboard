@@ -856,6 +856,121 @@ app.post("/update-bundles", async (req, res) => {
   res.redirect(`/?message=${encodeURIComponent(message)}#update-bundles`);
 });
 
+
+
+// Delete Bundle
+
+
+// --- Express Routes (Add this new route) ---
+
+app.post("/delete-bundles", async (req, res) => {
+    // Note: The global `shopifyApiCall` helper is configured with rate limiting,
+    // which is better than defining a new local one without it. We'll use the global one.
+    // The global `shopifyApiCall` uses the latest global API_VERSION ("2025-10").
+    const { product_id } = req.body;
+
+    if (!product_id) {
+        return res.redirect(`/?message=${encodeURIComponent("❌ Error: Product ID is required for deletion.")}#update-bundles`);
+    }
+
+    try {
+        // Step 1: Fetch the product variants and options via REST API
+        const productUrl = `https://${SHOP}/admin/api/${API_VERSION}/products/${product_id}.json`;
+        const productData = await shopifyApiCall("get", productUrl);
+        const product = productData.product;
+
+        if (!product || !product.variants) {
+            return res.redirect(`/?message=${encodeURIComponent(`❌ Error: Product ${product_id} not found or has no variants.`)}#update-bundles`);
+        }
+
+        const variants = product.variants;
+        const bundleVariantsToDelete = variants.filter((v) => {
+            // Identify variants where one of the options is a bundle size
+            const isBundleVariant = v.option1 === "1x" || v.option1 === "2x" || v.option1 === "3x" || 
+                                    v.option2 === "1x" || v.option2 === "2x" || v.option2 === "3x" || 
+                                    v.option3 === "1x" || v.option3 === "2x" || v.option3 === "3x";
+            return isBundleVariant;
+        });
+
+        if (bundleVariantsToDelete.length === 0) {
+            return res.redirect(`/?message=${encodeURIComponent(`⚠️ Warning: No bundle variants (1x, 2x, 3x) found for product ${product_id}.`)}#update-bundles`);
+        }
+
+        let deletionCount = 0;
+        
+        // Step 2: Delete bundle variants one by one (using the rate-limited global helper)
+        for (const variant of bundleVariantsToDelete) {
+            const variantUrl = `https://${SHOP}/admin/api/${API_VERSION}/products/${product_id}/variants/${variant.id}.json`;
+            try {
+                await shopifyApiCall("delete", variantUrl);
+                deletionCount++;
+            } catch (err) {
+                console.warn(`Could not delete variant ${variant.id} for product ${product_id}: ${err.message}`);
+            }
+        }
+        
+        // Step 3: Remove the 'Bundle' option and ensure a base option remains
+        const remainingOptions = product.options.filter(opt => opt.name.toLowerCase() !== 'bundle');
+        
+        let newOptions = remainingOptions;
+
+        // If no options remain after removing 'Bundle', or if only the 'Bundle' option existed,
+        // we must restore the default Shopify "Title" option to save the product.
+        if (newOptions.length === 0 || (newOptions.length === 1 && newOptions[0].name.toLowerCase() === 'bundle')) {
+             newOptions = [{ name: "Title", values: ["Default Title"] }];
+        }
+        
+        // If all variants were deleted, but a "Default Title" option remains, 
+        // we must explicitly create a default variant since Shopify mandates at least one variant.
+        const remainingVariants = variants.filter(v => !bundleVariantsToDelete.some(dv => dv.id === v.id));
+
+        if (remainingVariants.length === 0 && newOptions.length > 0) {
+            const createVariantUrl = `https://${SHOP}/admin/api/${API_VERSION}/products/${product_id}/variants.json`;
+            // Check if "Default Title" is the only option and value
+            const defaultTitleOption = newOptions.find(opt => opt.name === "Title" && opt.values.includes("Default Title"));
+
+            if (defaultTitleOption) {
+                 await shopifyApiCall("post", createVariantUrl, { 
+                    variant: { option1: "Default Title" } 
+                 });
+                 console.log(`Restored 'Default Title' variant for product ${product_id}`);
+            }
+        }
+
+
+        // Update product with new options array
+        await shopifyApiCall("put", productUrl, {
+            product: { id: product_id, options: newOptions },
+        });
+
+        // Step 4: Remove the 'bundle.extra_text' metafield
+        try {
+             // Fetch existing metafields to find the ID
+            const metafieldsUrl = `https://${SHOP}/admin/api/${API_VERSION}/products/${product_id}/metafields.json`;
+            const metafieldsResponse = await shopifyApiCall("get", metafieldsUrl);
+            const metafields = metafieldsResponse.metafields || [];
+            const bundleMetafield = metafields.find(m => m.namespace === "bundle" && m.key === "extra_text");
+            
+            if (bundleMetafield) {
+                 const deleteMetafieldUrl = `https://${SHOP}/admin/api/${API_VERSION}/metafields/${bundleMetafield.id}.json`;
+                 await shopifyApiCall("delete", deleteMetafieldUrl);
+                 console.log(`📝 Deleted metafield 'bundle.extra_text' for product ${product_id}`);
+            }
+
+        } catch (err) {
+             console.warn(`⚠️ Failed to delete metafield for ${product_id}: ${err.message}`);
+        }
+
+        const finalMessage = `✅ Deleted ${deletionCount} bundle variants and removed the 'Bundle' option for product ${product.title} (${product_id}).`;
+        res.redirect(`/?message=${encodeURIComponent(finalMessage)}`);
+
+    } catch (err) {
+        console.error(`❌ Error deleting bundles for product ${product_id}:`, err.message);
+        res.redirect(`/?message=${encodeURIComponent(`❌ Error deleting bundles for product ${product_id}: ${err.message}`)}`);
+    }
+});
+
+
 // Sync bundle inventory route (manual)
 app.post("/sync-bundle-inventory", async (req, res) => {
   const { product_id, variant_ids } = req.body;
