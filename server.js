@@ -548,35 +548,40 @@ app.post("/track-bundle-visit", async (req, res) => {
   }
 
   try {
-    // 1. Fetch existing metafield 
-    const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=bundle&key=visitors`;
+    // 1. FETCH: Retrieve the existing metafield to get its ID and current value
+    const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=${VISITOR_NAMESPACE}&key=${VISITOR_KEY}`;
     const fetchResponse = await shopifyApiCall("get", queryUrl);
 
-    // 💡 FIX: Check if 'metafields' array exists in the response
+    // Safely check for the metafield array
     const metafields = fetchResponse?.metafields || []; 
+    const existingMetafield = metafields.find(m => m.key === VISITOR_KEY);
     
-    // Use the safely accessed array
-    const existingMetafield = metafields.find(m => m.key === 'visitors');
-    
+    // 2. INCREMENT: Calculate the new count
+    const metafieldId = existingMetafield ? existingMetafield.id : null;
     let visitorCount = existingMetafield ? parseInt(existingMetafield.value) : 0;
-    visitorCount += 1; // Increment the count
+    
+    // Crucial: Increment the count
+    visitorCount += 1; 
 
+    // 3. PREPARE DATA: The data structure for POST/PUT
     const metafieldData = {
       metafield: {
-        namespace: 'bundle',
-        key: 'visitors',
-        value: visitorCount.toString(), // REST API requires the value as a string
-        type: VISITOR_TYPE, // <-- Ensure this uses the corrected constant
+        namespace: VISITOR_NAMESPACE,
+        key: VISITOR_KEY,
+        value: visitorCount.toString(),
+        type: VISITOR_TYPE, 
         owner_resource: "product",
       }
     };
 
-    if (existingMetafield) {
-      // 2. Update existing metafield
-      const updateUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/metafields/${existingMetafield.id}.json`;
+    if (metafieldId) {
+      // 4A. UPDATE (PUT): If we have an ID, we UPDATE the existing metafield
+      const updateUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/metafields/${metafieldId.split('/').pop()}.json`;
+      // Pass the numeric ID in the body for the PUT request (REST API requirement)
+      metafieldData.metafield.id = metafieldId.split('/').pop(); 
       await shopifyApiCall("put", updateUrl, metafieldData);
     } else {
-      // 3. Create new metafield
+      // 4B. CREATE (POST): If no ID is found, we CREATE a new metafield
       const createUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json`;
       await shopifyApiCall("post", createUrl, metafieldData);
     }
@@ -585,9 +590,7 @@ app.post("/track-bundle-visit", async (req, res) => {
     res.json({ success: true, count: visitorCount });
 
   } catch (error) {
-    // Send 500 status back to Vercel logs/browser
     console.error(`Error tracking bundle visit for ${product_id}: ${error.message}`);
-    // You can now be more confident that any 500 status from here is an API/Token issue
     res.status(500).json({ success: false, message: error.message });
   }
 });
