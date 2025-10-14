@@ -552,52 +552,50 @@ app.post("/track-bundle-visit", async (req, res) => {
     const queryUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json?namespace=${VISITOR_NAMESPACE}&key=${VISITOR_KEY}`;
     const fetchResponse = await shopifyApiCall("get", queryUrl);
 
-    // 2. INITIALIZE/RETRIEVE COUNT
+    // 2. INITIALIZE & RETRIEVE COUNT
     const metafields = fetchResponse?.metafields || []; 
     const existingMetafield = metafields[0]; 
 
     let numericMetafieldId = null;
-    let previousCount = 0; // Initialize to 0 for a safe starting point (first visit)
+    let previousCount = 0; // 💡 Retained for necessary safe initialization
 
-    // Check if the metafield was found
     if (existingMetafield && existingMetafield.value) {
-        // Extract the numeric ID
         numericMetafieldId = existingMetafield.id.split('/').pop();
         
-        // Safely parse the value from the API response
         const fetchedValue = parseInt(existingMetafield.value, 10);
         
-        // 💡 ONLY update previousCount if the parsed value is a valid number (not NaN)
+        // Use fetched value if it's a valid number
         if (!isNaN(fetchedValue)) {
             previousCount = fetchedValue;
         }
     }
     
-    // 3. INCREMENT (This is the core logic you requested)
-    const newCount = previousCount + 1; 
+    // 3. INCREMENT
+    const newCount = previousCount + 1; // Correctly relies on previousCount (which is 0 or the fetched value)
 
     // 4. PREPARE DATA
     const metafieldData = {
       metafield: {
         namespace: VISITOR_NAMESPACE,
         key: VISITOR_KEY,
-        value: newCount.toString(), // Send the new count as a string
+        value: newCount.toString(),
         type: VISITOR_TYPE, 
         owner_resource: "product",
       }
     };
 
     if (numericMetafieldId) {
-      // 5A. UPDATE (PUT): If we have the ID, update the existing metafield
+      // 5A. UPDATE (PUT)
       const updateUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/metafields/${numericMetafieldId}.json`;
       metafieldData.metafield.id = numericMetafieldId; 
       await shopifyApiCall("put", updateUrl, metafieldData);
     } else {
-      // 5B. CREATE (POST): Only runs on the very first visit
+      // 5B. CREATE (POST)
       const createUrl = `https://${SHOP}/admin/api/${LOCAL_API_VERSION}/products/${product_id}/metafields.json`;
       await shopifyApiCall("post", createUrl, metafieldData);
     }
     
+    // 6. LOGGING (Displays the resulting new count)
     console.log(`✅ Visitor count updated for product ${product_id} to ${newCount}`);
     res.json({ success: true, count: newCount });
 
