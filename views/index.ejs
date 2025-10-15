@@ -82,20 +82,25 @@
         flex-grow: 1;
     }
     /* Standard input styles */
-    .bundle-form input[type="number"], .bundle-form input[type="text"] {
-      padding: 8px 12px;
-      border: 1px solid var(--p-color-border-default);
-      border-radius: 4px;
-      box-sizing: border-box;
-      width: 100%;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    
-    .bundle-form input[type="number"]:focus, .bundle-form input[type="text"]:focus {
-        border-color: var(--p-color-interactive-default);
-        box-shadow: 0 0 0 1px var(--p-color-interactive-default);
-        outline: none;
-    }
+    .bundle-form input[type="number"],
+.bundle-form input[type="text"],
+input[type="date"] {
+  padding: 8px 12px;
+  border: 1px solid var(--p-color-border-default);
+  border-radius: 4px;
+  box-sizing: border-box;
+  width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.bundle-form input[type="number"]:focus,
+.bundle-form input[type="text"]:focus,
+input[type="date"]:focus {
+  border-color: var(--p-color-interactive-default);
+  box-shadow: 0 0 0 1px var(--p-color-interactive-default);
+  outline: none;
+}
+
     
     /* --- CUSTOM FILTER UI (Market/Collection Tags) --- */
     .custom-multi-select {
@@ -605,11 +610,12 @@
       </form>
     </div>
   </div>
-  <div class="card" id="analytics-controls-card">
+
+<div class="card" id="analytics-controls-card">
     <div class="card-header">
         <h2>Analytics Filters</h2>
     </div>
-    <div class="form-group" style="gap: 15px; margin-bottom: 0;">
+    <div class="form-group" style="gap: 15px; margin-bottom: 0; flex-wrap: wrap;">
         
         <div class="input-field" style="flex-basis: 240px; flex-grow: 0;">
             <label for="analytics_tag_filter">Filter by Tag (Country/Market):</label>
@@ -624,6 +630,29 @@
             </select>
         </div>
 
+        <div class="input-field" style="flex-basis: 240px; flex-grow: 0;">
+            <label for="analytics_duration_filter">Filter by Duration:</label>
+            <select id="analytics_duration_filter" onchange="handleDurationChange()"
+                    style="padding: 8px 12px; border: 1px solid var(--p-color-border-default); border-radius: 4px; box-sizing: border-box; width: 100%;">
+                <option value="none">None (All Time)</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="last7">Last 7 Days</option>
+                <option value="custom">Custom Range</option>
+            </select>
+        </div>
+
+        <div class="input-field" id="custom-date-range" style="flex-basis: 400px; flex-grow: 1; display: none; gap: 15px;">
+            <div style="flex-grow: 1;">
+                <label for="start_date">Start Date:</label>
+                <input type="date" id="start_date" onchange="applyAnalyticsFilterAndSort()" style="width: 100%;">
+            </div>
+            <div style="flex-grow: 1;">
+                <label for="end_date">End Date:</label>
+                <input type="date" id="end_date" onchange="applyAnalyticsFilterAndSort()" style="width: 100%;">
+            </div>
+        </div>
+
         <div class="input-field" style="flex-basis: 180px; flex-grow: 0; margin-left:auto;">
             <label for="analytics_sort_by">Sort By:</label>
             <select id="analytics_sort_by" onchange="applyAnalyticsFilterAndSort()"
@@ -633,7 +662,7 @@
                 <option value="conversion_low">Performance (Low to High)</option>
             </select>
         </div>
-        </div>
+    </div>
 </div>
 <div class="card">
     <div class="card-header">
@@ -647,43 +676,55 @@
             <thead>
               <tr>
                 <th>Product Title (ID)</th>
-                <th>Analytics</th> 
+                <th id="analytics-column-header">Analytics (All Time)</th> 
                 <th>Bundles Created</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody id="analytics-table-body">
               <% bundledProducts.forEach(product => { 
-                // Calculate necessary values for data attributes
+                // Calculate necessary values for display and sorting (using initial All Time data)
                 let totalVisitors = product.visitors || 0;
                 let totalSold = product.bundles.reduce((sum, b) => sum + (b.totalOrders || 0), 0);
                 let conversionRate = totalVisitors > 0 ? (totalSold / totalVisitors) * 100 : 0;
                 let formattedRate = Number.isInteger(conversionRate) ? conversionRate : conversionRate.toFixed(1);
                 let tagsString = product.tags ? product.tags.join(',') : '';
+
+                // Store original JSON data (including salesByDate array and dailyVisits) on the row for client-side filtering
+                const productDataJson = JSON.stringify({
+                    visitors: product.visitors,
+                    dailyVisits: product.dailyVisits, // 💡 NEW: Ensure this is included
+                    bundles: product.bundles.map(b => ({
+                        type: b.type,
+                        totalOrders: b.totalOrders,
+                        salesByDate: b.salesByDate
+                    }))
+                });
               %>
-                <tr data-country-tag="<%= tagsString %>" data-conversion-rate="<%= conversionRate.toFixed(2) %>">
+                <tr data-product-id="<%= product.id %>" 
+                    data-country-tag="<%= tagsString %>" 
+                    data-conversion-rate="<%= conversionRate.toFixed(2) %>"
+                    data-original-json="<%= encodeURIComponent(productDataJson) %>"
+                    data-original-title="<%= product.title %>"> 
                   <td>
                     <%= product.title %> (<%= product.id %>)
                     <br>
                     <small style="color: var(--p-color-icon-default);">Tags: <%= product.tags ? product.tags.join(', ') : 'None' %></small>
                   </td>
-             <td> 
-      <i class="fa-solid fa-users-rectangle"></i> 
-      <strong><%= product.visitors %></strong> |
+                  <td class="analytics-data-cell"> 
+                    <i class="fa-solid fa-users-rectangle"></i> 
+                    <strong class="visitors-count"><%= product.visitors %></strong> |
+                    
+                    <% product.bundles.forEach((bundle, index) => { %>
+                        <%= bundle.type.charAt(0) %>x: 
+                        <strong class="<%= bundle.type.charAt(0) %>x-sold"><%= bundle.totalOrders %></strong>
+                        <% if (index < product.bundles.length - 1) { %> | <% } %>
+                    <% }); %>
+                    
+                    | → <strong class="conversion-rate-display"><%= formattedRate %>%</strong>
+                  </td>
 
-      <% product.bundles.forEach((bundle, index) => { %>
-        <%= bundle.type.charAt(0) %>x: 
-        <strong><%= bundle.totalOrders %></strong>
-        <% if (index < product.bundles.length - 1) { %> | <% } %>
-      <% }); %>
 
-      | → <strong><%= formattedRate %>%</strong>
-    </td>
-
-
-                
-              
-                  
                   <td><%= product.bundles.map(b => b.type).join(", ") %></td>
                  <td style="display: flex; gap: 10px; align-items: center;">
                     <a href="https://<%= process.env.SHOP %>/admin/products/<%= product.id %>#variants-section" 
@@ -712,9 +753,78 @@
 // DEDICATED SCRIPT BLOCK FOR ANALYTICS FILTERING/SORTING
 // ----------------------------------------------------
 
+// --- Date Utilities ---
+
 /**
- * Filters the table rows based on the selected tag and sorts them 
- * based on the selected performance metric.
+ * Calculates the start and end dates based on the duration filter.
+ * Returns {startDate: Date, endDate: Date} or null if "none" is selected.
+ */
+function getDateRange() {
+    const durationFilter = document.getElementById('analytics_duration_filter').value;
+    const today = new Date();
+    // Normalize today to start of day
+    today.setHours(0, 0, 0, 0);
+
+    let startDate = null;
+    let endDate = null;
+
+    if (durationFilter === 'today') {
+        startDate = new Date(today);
+        endDate = new Date(today);
+        endDate.setHours(23, 59, 59, 999);
+    } else if (durationFilter === 'yesterday') {
+        startDate = new Date(today);
+        startDate.setDate(today.getDate() - 1);
+        startDate.setHours(0, 0, 0, 0); // Ensure start of yesterday
+        endDate = new Date(startDate);
+        endDate.setHours(23, 59, 59, 999); // Ensure end of yesterday
+    } else if (durationFilter === 'last7') {
+        // Last 7 days, including today (or up to today)
+        startDate = new Date(today);
+        startDate.setDate(today.getDate() - 6); 
+        endDate = new Date(today);
+        endDate.setHours(23, 59, 59, 999);
+    } else if (durationFilter === 'custom') {
+        const startInput = document.getElementById('start_date').value;
+        const endInput = document.getElementById('end_date').value;
+        
+        if (startInput) startDate = new Date(startInput);
+        if (endInput) {
+            endDate = new Date(endInput);
+            // Include sales for the entire end day
+            endDate.setHours(23, 59, 59, 999);
+        }
+        // If start or end is invalid/missing for custom, return null to show all data
+        if (!startDate || !endDate) return null;
+        
+        // Ensure start time is midnight for accurate range comparison
+        if (startDate) startDate.setHours(0, 0, 0, 0);
+
+    } else { // 'none'
+        return null; 
+    }
+    
+    return { startDate, endDate };
+}
+
+/**
+ * Handles the visibility of the custom date range inputs.
+ */
+function handleDurationChange() {
+    const durationFilter = document.getElementById('analytics_duration_filter').value;
+    const customRangeDiv = document.getElementById('custom-date-range');
+    
+    if (durationFilter === 'custom') {
+        customRangeDiv.style.display = 'flex';
+    } else {
+        customRangeDiv.style.display = 'none';
+        // Trigger filter update when selection changes away from custom
+        applyAnalyticsFilterAndSort();
+    }
+}
+
+/**
+ * Filters the table rows and updates analytics based on current filters.
  */
 function applyAnalyticsFilterAndSort() {
     const tableBody = document.getElementById('analytics-table-body');
@@ -722,36 +832,111 @@ function applyAnalyticsFilterAndSort() {
     const tagFilter = document.getElementById('analytics_tag_filter');
     const sortFilter = document.getElementById('analytics_sort_by');
     const noResultsMsg = document.getElementById('analytics-no-results');
-    
-    // Safety check for critical elements
+    const headerCell = document.getElementById('analytics-column-header');
+
     if (!tableBody || !tagFilter || !sortFilter) return;
 
-    const selectedTag = tagFilter.value.trim();
-    const selectedTagLower = selectedTag.toLowerCase();
-    console.log(`Filtering by tag: ${selectedTag}, Sorting by: ${sortFilter.value}`);
+    const selectedTag = tagFilter.value.trim().toLowerCase();
+    const dateRange = getDateRange();
+    
+    // Update Header Text
+    const durationText = dateRange ? ' (Filtered)' : ' (All Time)';
+    headerCell.textContent = 'Analytics' + durationText;
+
 
     const rows = Array.from(tableBody.querySelectorAll('tr'));
     let visibleCount = 0;
     
-    // --- 1. Filtering (Case-insensitive TAG LOGIC) ---
+    const visibleRows = [];
+
     rows.forEach(row => {
         const rowTagsString = row.getAttribute('data-country-tag');
         const rowTagsArray = rowTagsString
             ? rowTagsString.split(',').map(t => t.trim().toLowerCase())
             : [];
-
-        const matchesTag = selectedTag === 'ALL' || rowTagsArray.includes(selectedTagLower);
+        // Ensure that we decode the URI component before parsing the JSON
+        const originalData = JSON.parse(decodeURIComponent(row.getAttribute('data-original-json')));
+        const originalTitle = row.getAttribute('data-original-title');
         
-        if (matchesTag) {
-            row.style.display = '';
-            visibleCount++;
-        } else {
+        // --- 1. Filter by Tag (Country/Market) ---
+        const matchesTag = selectedTag === 'all' || rowTagsArray.includes(selectedTag);
+        
+        if (!matchesTag) {
             row.style.display = 'none';
+            return;
         }
+
+        // --- 2. Calculate Aggregates for Selected Date Range (Client-Side) ---
+        let filteredTotalSold = 0;
+        let filteredBundleSales = {};
+        // 💡 NEW: Calculate filtered visitor count
+        let filteredVisitors = 0; 
+        
+        // Calculate filtered visitors from dailyVisits array
+        if (originalData.dailyVisits) { // Check for the new field
+            originalData.dailyVisits.forEach(visit => {
+                const visitDate = new Date(visit.date);
+                visitDate.setHours(0, 0, 0, 0);
+                
+                if (!dateRange || (visitDate >= dateRange.startDate && visitDate <= dateRange.endDate)) {
+                    filteredVisitors += visit.quantity;
+                }
+            });
+        }
+        
+        if (originalData.bundles) {
+            originalData.bundles.forEach(bundle => {
+                let bundleSold = 0;
+                
+                // salesByDate is an array: [{date: "YYYY-MM-DD", quantity: #}]
+                bundle.salesByDate.forEach(sale => {
+                    // Create a Date object from the YYYY-MM-DD string
+                    const saleDate = new Date(sale.date);
+                    // Normalize saleDate to start of day (midnight) for comparison
+                    saleDate.setHours(0, 0, 0, 0); 
+                    
+                    if (!dateRange || (saleDate >= dateRange.startDate && saleDate <= dateRange.endDate)) {
+                        bundleSold += sale.quantity;
+                    }
+                });
+                
+                filteredBundleSales[bundle.type] = bundleSold;
+                filteredTotalSold += bundleSold;
+            });
+        }
+        
+        // --- 3. Update Table Cells with Filtered Data ---
+        // Conversion rate now uses FILTERED visitors and FILTERED sales.
+        const filteredConversionRate = filteredVisitors > 0 ? (filteredTotalSold / filteredVisitors) * 100 : 0;
+        const formattedRate = Number.isInteger(filteredConversionRate) 
+                            ? filteredConversionRate 
+                            : filteredConversionRate.toFixed(1);
+        
+        // Update data attributes for sorting
+        row.setAttribute('data-conversion-rate', filteredConversionRate.toFixed(2));
+        row.setAttribute('data-total-sold', filteredTotalSold);
+        
+        // Update the content of the analytics cell
+        const analyticsCell = row.querySelector('.analytics-data-cell');
+        if (analyticsCell) {
+            // Re-render the analytics cell content
+            analyticsCell.innerHTML = `
+                <i class="fa-solid fa-users-rectangle"></i> 
+                <strong>${filteredVisitors}</strong> | 
+                ${Object.entries(filteredBundleSales).map(([type, sold]) => 
+                    `${type.charAt(0)}x: <strong>${sold}</strong>`
+                ).join(' | ')}
+                | → <strong class="conversion-rate-display">${formattedRate}%</strong>
+            `;
+        }
+        
+        // --- 4. Final Display Status ---
+        row.style.display = '';
+        visibleCount++;
+        visibleRows.push(row);
     });
 
-    // --- 2. Sorting (Only visible rows are sorted) ---
-    const visibleRows = rows.filter(row => row.style.display !== 'none');
+    // --- 5. Sorting ---
     const sortBy = sortFilter.value;
     
     if (sortBy === 'conversion_high' || sortBy === 'conversion_low') {
@@ -762,16 +947,16 @@ function applyAnalyticsFilterAndSort() {
         });
     } else if (sortBy === 'title') {
         visibleRows.sort((a, b) => {
-            const titleA = a.querySelector('td:first-child').firstChild.textContent.trim().toLowerCase();
-            const titleB = b.querySelector('td:first-child').firstChild.textContent.trim().toLowerCase();
+            const titleA = a.getAttribute('data-original-title').toLowerCase();
+            const titleB = b.getAttribute('data-original-title').toLowerCase();
             return titleA.localeCompare(titleB);
         });
     }
 
-    // --- 3. Re-append rows in sorted order ---
+    // --- 6. Re-append rows in sorted order ---
     visibleRows.forEach(row => tableBody.appendChild(row));
     
-    // --- 4. Display Status ---
+    // --- 7. Display Status ---
     if (visibleCount === 0) {
         if (noResultsMsg) noResultsMsg.style.display = 'block';
         if (table) table.style.display = 'none';
@@ -787,11 +972,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Attach listeners to the select elements
     const sortSelect = document.getElementById('analytics_sort_by');
     const tagSelect = document.getElementById('analytics_tag_filter');
+    const durationSelect = document.getElementById('analytics_duration_filter');
     
     if (sortSelect) sortSelect.addEventListener('change', applyAnalyticsFilterAndSort);
     if (tagSelect) tagSelect.addEventListener('change', applyAnalyticsFilterAndSort);
+    if (durationSelect) durationSelect.addEventListener('change', handleDurationChange);
 
-    // Run the filter/sort logic on initial load to apply default order (Title A-Z)
+    // Initial run to apply defaults and load data
     applyAnalyticsFilterAndSort(); 
 });
 </script>
