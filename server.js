@@ -190,12 +190,19 @@ const PRODUCT_VARIANTS_BULK_CREATE_MUTATION = `
 // --- GraphQL Queries for Reporting ---
 // Around line 208
 // Replace the existing BUNDLE_VARIANT_SALES_QUERY (around line 208)
+// REPLACE the existing BUNDLE_VARIANT_SALES_QUERY (around line 208) with this:
+
+// --- GraphQL Queries for Reporting ---
+// Around line 208
+// Replace the existing BUNDLE_VARIANT_SALES_QUERY (around line 208)
+// REPLACE the existing BUNDLE_VARIANT_SALES_QUERY (around line 208) with this:
 
 const BUNDLE_VARIANT_SALES_QUERY = (variantIds) => ` 
   query GetVariantSales($cursor: String) { 
     orders(first: 250, after: $cursor) { 
       edges { 
         node { 
+          createdAt 
           lineItems(first: 250) { 
             edges { 
               node { 
@@ -216,13 +223,22 @@ const BUNDLE_VARIANT_SALES_QUERY = (variantIds) => `
     } 
   } 
 `;
-
 // --- Fetching Logic ---
 // --- Existing Product Fetching Logic (Updated to return mapped products) ---
 // Replace your entire async function fetchProductsAndBundles() with this:
 // Replace the entire existing fetchProductsAndBundles function (around line 312)
 
 // REPLACE the entire existing fetchProductsAndBundles function
+
+// REPLACE the entire existing fetchProductsAndBundles function (around line 315) with this:
+
+// REPLACE the entire existing fetchProductsAndBundles function (around line 315) with this:
+
+// REPLACE the entire existing fetchProductsAndBundles function (around line 315) with this:
+
+// REPLACE the entire existing fetchProductsAndBundles function (around line 315) with this:
+
+// REPLACE the provided async function fetchProductsAndBundles() with this:
 
 async function fetchProductsAndBundles() { 
     let products = []; 
@@ -232,8 +248,9 @@ async function fetchProductsAndBundles() {
     // 💡 NEW MAP: Stores stable SKU -> current GID
     const skuToGidMap = new Map(); 
 
-    // 🎯 CRITICAL FIX: Single-line query to eliminate the syntax error source
-    const query = "query fetchProducts($first: Int!, $after: String) { products(first: $first, after: $after) { edges { node { id title tags metafield(namespace: \"bundle\", key: \"visitors\") { value } options { id name values } variants(first: 10) { edges { node { id sku selectedOptions { name value } price inventoryItem { id inventoryLevels(first: 1) { edges { node { quantities(names: [\"available\"]) { name quantity } location { id } } } } } } } } images(first: 1) { edges { node { id src } } } } } pageInfo { hasNextPage endCursor } } }";
+    // 🎯 CRITICAL FIX: Update the GraphQL query to fetch the 'daily_visits' JSON metafield
+    // Assuming VISITOR_NAMESPACE="bundle" and VISITOR_KEY="daily_visits"
+    const query = "query fetchProducts($first: Int!, $after: String) { products(first: $first, after: $after) { edges { node { id title tags metafield(namespace: \"bundle\", key: \"daily_visits\") { value } options { id name values } variants(first: 10) { edges { node { id sku selectedOptions { name value } price inventoryItem { id inventoryLevels(first: 1) { edges { node { quantities(names: [\"available\"]) { name quantity } location { id } } } } } } } } images(first: 1) { edges { node { id src } } } } } pageInfo { hasNextPage endCursor } } }";
 
     try { 
         let hasNextPage = true; 
@@ -250,10 +267,36 @@ async function fetchProductsAndBundles() {
 
         const mappedProducts = products 
             .map(product => { 
+                
+                // 💡 UPDATED LOGIC: Parse JSON metafield for daily visitors
+                const dailyVisitsJson = product.metafield?.value;
+                let dailyVisitsArray = [];
+                let totalVisitors = 0;
+
+                if (dailyVisitsJson) {
+                    try {
+                        const dailyVisitsMap = JSON.parse(dailyVisitsJson);
+                        // Convert map { "YYYY-MM-DD": count } to array format [{ date, quantity }]
+                        dailyVisitsArray = Object.entries(dailyVisitsMap)
+                            .map(([date, quantity]) => ({ date, quantity }))
+                            // Sort by date (newest first)
+                            .sort((a, b) => b.date.localeCompare(a.date));
+                            
+                        // Calculate total visitors from the daily counts
+                        totalVisitors = dailyVisitsArray.reduce((sum, item) => sum + item.quantity, 0);
+
+                    } catch (e) {
+                        console.error(`Error parsing daily visits JSON for product ${product.id}:`, e.message);
+                    }
+                }
+
                 const mappedProduct = { 
                     id: product.id.split('/').pop(), 
                     title: product.title, 
-                    visitors: product.metafield ? parseInt(product.metafield.value) : 0,  
+                    // 💡 UPDATED: Use the calculated totalVisitors
+                    visitors: totalVisitors,  
+                    // 💡 NEW FIELD: Store the daily visits array for client-side filtering
+                    dailyVisits: dailyVisitsArray,
                     variants: product.variants?.edges?.map(e => e.node) || [], 
                     options: product.options, 
                     tags: product.tags 
@@ -261,7 +304,7 @@ async function fetchProductsAndBundles() {
                 (product.tags || []).forEach(tag => allUniqueTags.add(tag.trim().toLowerCase())); 
                 return mappedProduct; 
             }); 
-
+        // ... rest of filtering logic remains unchanged
         const filteredProducts = mappedProducts 
             .filter(product => { 
                 const variants = product.variants; 
@@ -313,7 +356,9 @@ async function fetchProductsAndBundles() {
                             sku: bundleSku,
                             price: parseFloat(variant.price).toFixed(2), 
                             available, 
-                            totalOrders: 0 
+                            totalOrders: 0,
+                            // 💡 This will hold the transformed array
+                            salesByDate: [] 
                         }); 
                     } 
                 }); 
@@ -323,20 +368,58 @@ async function fetchProductsAndBundles() {
                     title: product.title,  
                     bundles, 
                     visitors: visitorCount,
+                    dailyVisits: product.dailyVisits, // 💡 Pass the daily visits array here
                     tags: productTags // 💡 Include tags in the final object
                 } : null; 
             }) 
             .filter(p => p !== null); 
              
         // 💡 Pass the SKU map for stable sales aggregation
+        // salesMap returns: Map<GID, Object<DateString, Quantity>>
         const salesMap = await fetchAndAggregateSales(allBundleVariantGids, skuToGidMap); 
+
+        // 💡 Initialize the final log structure
+        const productSalesLog = {};
 
         // 💡 Calculate total sales and conversion rate
         bundledProducts.forEach(product => { 
             let totalSold = 0;
+            
+            // Initialize the product entry in the log structure
+            productSalesLog[product.id] = {
+                title: product.title,
+                visitors: product.visitors, // All-time calculated visitors
+                dailyVisits: product.dailyVisits, // Daily visitors array
+                variants: []
+            };
+
             product.bundles.forEach(bundle => { 
-                bundle.totalOrders = salesMap.get(bundle.variantGid) || 0; 
+                
+                // 1. Retrieve the date-specific sales OBJECT from the salesMap
+                const dateSalesObject = salesMap.get(bundle.variantGid) || {};
+                
+                // 2. TRANSFORM the object into the requested array format: [{date: "YYYY-MM-DD", quantity: #}]
+                const salesArray = Object.entries(dateSalesObject)
+                    .map(([date, quantity]) => ({ date, quantity }))
+                    // Sort by date (newest first)
+                    .sort((a, b) => b.date.localeCompare(a.date));
+                
+                // 3. Store the new array structure in the bundle
+                bundle.salesByDate = salesArray;
+                
+                // 4. Calculate total sold
+                bundle.totalOrders = Object.values(dateSalesObject).reduce((sum, qty) => sum + qty, 0); 
+
                 totalSold += bundle.totalOrders;
+                
+                // 5. Populate the final log structure
+                productSalesLog[product.id].variants.push({
+                    variantId: bundle.variantId,
+                    type: bundle.type,
+                    totalOrders: bundle.totalOrders,
+                    salesByDate: salesArray
+                });
+
                 delete bundle.variantGid; 
                 delete bundle.sku; 
             }); 
@@ -346,12 +429,17 @@ async function fetchProductsAndBundles() {
             product.totalSold = totalSold; // Store total sold for the analytics column
         }); 
 
+        // 💡 NEW: Consolidated Console Log
+        console.log("--- Consolidated Sales by Date Breakdown (Keyed by Product ID) ---");
+        console.log(JSON.stringify(productSalesLog, null, 2));
+        console.log("-------------------------------------------------------------------");
+
         // Apply initial sorting (Title ASC) before sending to the client
         bundledProducts.sort((a, b) => a.title.localeCompare(b.title));
 
         return {  
             filteredProducts,  
-            bundledProducts, // Contains conversionRate, totalSold, and tags for client-side filtering
+            bundledProducts, // Contains conversionRate, totalSold, dailyVisits and tags for client-side filtering
             allUniqueTags: Array.from(allUniqueTags).sort() 
         }; 
     } catch (err) { 
@@ -367,11 +455,20 @@ async function fetchData() {
 // 💡 NEW HELPER FUNCTION
 // Replace the entire existing fetchAndAggregateSales function (around line 527)
 
+// REPLACE the entire existing fetchAndAggregateSales function (around line 527) with this new version:
+
+// 💡 NEW HELPER FUNCTION
+// Replace the entire existing fetchAndAggregateSales function (around line 527)
+
+// REPLACE the entire existing fetchAndAggregateSales function (around line 527) with this new version:
+
 async function fetchAndAggregateSales(variantGids, skuToGidMap) { 
     // variantGids is now only used to check if there are any products to process
     if (variantGids.length === 0) return new Map(); 
 
+    // skuSalesMap will store: SKU -> Map<DateString, QuantitySold>
     const skuSalesMap = new Map(); 
+    // finalGidSalesMap will store: GID -> Object<DateString, QuantitySold>
     const finalGidSalesMap = new Map();
     
     // Get all unique bundle SKUs for efficient internal filtering
@@ -380,26 +477,43 @@ async function fetchAndAggregateSales(variantGids, skuToGidMap) {
     // Pagination setup
     let hasNextPage = true; 
     let cursor = null; 
-    const MAX_PAGES = 10; // Safety limit to prevent rate limit issues
+    const MAX_PAGES = 10; // Safety limit to prevent excessive API calls
     let pageCount = 0;
 
     // We fetch broad orders without GID filter, relying on SKU for accurate filtering
     while (hasNextPage && pageCount < MAX_PAGES) { 
-        // We use the BUNDLE_VARIANT_SALES_QUERY defined in step 1, passing the cursor
+        // Use the BUNDLE_VARIANT_SALES_QUERY which now includes createdAt
         const query = BUNDLE_VARIANT_SALES_QUERY([]);
+        // CRITICAL: Use the global shopifyGraphQLCall which includes rate limiting and retry logic
         const data = await shopifyGraphQLCall(query, { cursor }); 
          
         const orders = data?.orders?.edges || []; 
         pageCount++;
          
         orders.forEach(orderEdge => { 
+            // 💡 FIX/CRITICAL: Ensure createdAt exists before processing
+            if (!orderEdge.node.createdAt) return;
+
+            // Extract YYYY-MM-DD date string from Order's createdAt
+            // Example: "2025-10-15T12:00:00Z" -> "2025-10-15"
+            const orderDate = new Date(orderEdge.node.createdAt).toISOString().split('T')[0];
+            
             orderEdge.node.lineItems.edges.forEach(lineItemEdge => { 
                 const orderSku = lineItemEdge.node.sku;
                 const quantity = lineItemEdge.node.quantity;
                  
-                // CRITICAL: Filter based on the stable SKU
+                // Filter based on the stable SKU
                 if (orderSku && allBundleSkus.has(orderSku)) { 
-                    skuSalesMap.set(orderSku, (skuSalesMap.get(orderSku) || 0) + quantity); 
+                    
+                    let dailySalesMap = skuSalesMap.get(orderSku);
+                    if (!dailySalesMap) {
+                        dailySalesMap = new Map();
+                        skuSalesMap.set(orderSku, dailySalesMap);
+                    }
+                    
+                    // Aggregate quantity for this specific date
+                    const currentQty = dailySalesMap.get(orderDate) || 0;
+                    dailySalesMap.set(orderDate, currentQty + quantity);
                 }
             }); 
         }); 
@@ -415,8 +529,12 @@ async function fetchAndAggregateSales(variantGids, skuToGidMap) {
     
     // Map the aggregated quantities from stable SKU back to the current GID
     skuToGidMap.forEach((currentGid, sku) => {
-        const totalSold = skuSalesMap.get(sku) || 0;
-        finalGidSalesMap.set(currentGid, totalSold);
+        const dailySalesMap = skuSalesMap.get(sku) || new Map();
+        
+        // Convert the Map<Date, Quantity> to a standard object for the final return
+        const dailySalesObject = Object.fromEntries(dailySalesMap);
+        
+        finalGidSalesMap.set(currentGid, dailySalesObject);
     });
 
     return finalGidSalesMap; 
@@ -499,9 +617,15 @@ async function fetchBundleMappings() {
 // ... (existing code before app.get("/") route)
 
 // --- Metafield Constants (Ensure these match your created metafield) ---
+// --- Metafield Constants (Ensure these match your created metafield) ---
 const VISITOR_NAMESPACE = "bundle";
-const VISITOR_KEY = "visitors";
-const VISITOR_TYPE = "number_integer"; 
+// 💡 CHANGE: Use a new key for daily tracking
+const VISITOR_KEY = "daily_visits"; 
+// 💡 CHANGE: Use JSON type to store map of { "YYYY-MM-DD": count }
+const VISITOR_TYPE = "json"; 
+
+// Old constant (for reference/cleanup, if needed):
+const LEGACY_VISITOR_KEY = "visitors";
 
 // 💡 NEW: Endpoint to track visitors and increment the metafield
 const VISITORS_UPDATE_MUTATION = `
@@ -526,65 +650,88 @@ const VISITORS_FETCH_QUERY = `
       metafield(namespace: "${VISITOR_NAMESPACE}", key: "${VISITOR_KEY}") {
         value
       }
+      // Fetch the legacy total visitors field as well, if it exists
+      legacyMetafield: metafield(namespace: "${VISITOR_NAMESPACE}", key: "${LEGACY_VISITOR_KEY}") {
+        value
+      }
     }
   }
 `;
+
 
 
 // 💡 FINAL GRAPHQL FUNCTION: Uses GraphQL for persistence and relies on shopifyGraphQLCall
 app.post("/track-bundle-visit", async (req, res) => {
   const { product_id } = req.body;
   const productGid = `gid://shopify/Product/${product_id}`;
+  const todayDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
   if (!product_id) {
     return res.status(400).json({ success: false, message: "Product ID required." });
   }
 
   try {
-    // 1. FETCH: Retrieve the existing metafield count via GraphQL
+    // 1. FETCH: Retrieve the existing JSON metafield (and legacy total)
     const fetchResponse = await shopifyGraphQLCall(VISITORS_FETCH_QUERY, { id: productGid });
     
-    // 2. INITIALIZE/RETRIEVE COUNT
-    const metafieldData = fetchResponse?.product?.metafield;
-    let previousCount = 0;
+    const metafieldData = fetchResponse?.product;
+    const jsonMetafield = metafieldData?.metafield;
     
-    if (metafieldData && metafieldData.value) {
-        const fetchedValue = parseInt(metafieldData.value, 10);
-        if (!isNaN(fetchedValue)) {
-            previousCount = fetchedValue;
+    let dailyCounts = {}; // Stores { "YYYY-MM-DD": count, ... }
+    let totalVisitors = 0;
+
+    // A. Load existing daily data
+    if (jsonMetafield && jsonMetafield.value) {
+        try {
+            dailyCounts = JSON.parse(jsonMetafield.value);
+            // Calculate current total visitors from daily counts
+            totalVisitors = Object.values(dailyCounts).reduce((sum, count) => sum + count, 0);
+        } catch (e) {
+            console.warn(`Could not parse JSON for ${product_id}: ${jsonMetafield.value}. Initializing new map.`);
+        }
+    } 
+    
+    // B. Handle initialization/legacy migration (Optional: Run only once if needed)
+    // If we have no daily counts but an old total exists, seed the totalVisitors count with it
+    const legacyMetafield = metafieldData?.legacyMetafield;
+    if (totalVisitors === 0 && legacyMetafield && legacyMetafield.value) {
+        const legacyCount = parseInt(legacyMetafield.value, 10);
+        if (!isNaN(legacyCount)) {
+            totalVisitors = legacyCount;
         }
     }
-    
-    // 3. INCREMENT
-    const newCount = previousCount + 1; 
 
-    // 4. WRITE: Set the new count using the GraphQL mutation
+    // 2. INCREMENT TODAY'S COUNT
+    const previousDailyCount = dailyCounts[todayDate] || 0;
+    const newDailyCount = previousDailyCount + 1;
+    
+    dailyCounts[todayDate] = newDailyCount;
+    totalVisitors++; // Increment the overall total
+
+    // 3. WRITE: Set the updated daily counts JSON
     const variables = {
       metafields: [{
         ownerId: productGid,
         namespace: VISITOR_NAMESPACE,
         key: VISITOR_KEY,
-        value: newCount.toString(), // Must be sent as a string
-        type: VISITOR_TYPE, // number_integer
+        value: JSON.stringify(dailyCounts), 
+        type: VISITOR_TYPE, // json
       }]
     };
 
     const updateResponse = await shopifyGraphQLCall(VISITORS_UPDATE_MUTATION, variables);
     
-    // Check for errors in the mutation response
     const userErrors = updateResponse?.metafieldsSet?.userErrors || [];
     if (userErrors.length > 0) {
-      // Throw an error if GraphQL explicitly rejected the write
       throw new Error(`GraphQL Metafield Set Error: ${JSON.stringify(userErrors)}`);
     }
 
-    // 5. LOGGING
-    console.log(`✅ Visitor count updated for product ${product_id}: ${previousCount} → ${newCount} (GraphQL)`);
-    res.json({ success: true, count: newCount });
+    // 4. LOGGING
+    console.log(`✅ Visitor count updated for product ${product_id}. Today (${todayDate}): ${previousDailyCount} → ${newDailyCount}. Total: ${totalVisitors}.`);
+    res.json({ success: true, count: newDailyCount, total: totalVisitors });
 
   } catch (error) {
     console.error(`Error tracking bundle visit for product ${product_id}: ${error.message}`);
-    // Respond with 500 status to client
     res.status(500).json({ success: false, message: error.message });
   }
 });
