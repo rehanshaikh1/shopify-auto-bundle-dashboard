@@ -10,9 +10,12 @@ const app = express();
 
 
 // --- CORS Configuration ---
+// --- CORS Configuration ---
 const allowedOrigins = [
-  'https://velonia.si',                       // Your primary custom domain
-  'https://s0jd0m-rg.myshopify.com',           // 💡 PASTE THIS DOMAIN
+  'https://velonia.si',                       
+  'https://www.velonia.si',                   // 💡 FIX 1: Add the common 'www' version
+  'https://s0jd0m-rg.myshopify.com',
+  'https://shopify-auto-bundle-dashboard.vercel.app', // 💡 FIX 2: Explicitly allow the app's hosting domain (Vercel)
 ]; 
 const corsOptions = {
   origin: function (origin, callback) {
