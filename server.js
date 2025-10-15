@@ -644,13 +644,13 @@ const VISITORS_UPDATE_MUTATION = `
 `;
 
 // 💡 NEW GRAPHQL QUERY for fetching the current count
+// 💡 NEW GRAPHQL QUERY for fetching the current JSON count
 const VISITORS_FETCH_QUERY = `
   query GetVisitorCount($id: ID!) {
     product(id: $id) {
       metafield(namespace: "${VISITOR_NAMESPACE}", key: "${VISITOR_KEY}") {
         value
       }
-      // Fetch the legacy total visitors field as well, if it exists
       legacyMetafield: metafield(namespace: "${VISITOR_NAMESPACE}", key: "${LEGACY_VISITOR_KEY}") {
         value
       }
